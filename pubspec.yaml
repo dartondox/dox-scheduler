@@ -1,5 +1,5 @@
 name: dox_scheduler
-description: Task scheduler for the Dox framework: run functions or queue jobs on a cron schedule, once per tick across isolates and servers.
+description: "Task scheduler for the Dox framework: run functions or queue jobs on a cron schedule, once per tick across isolates and servers."
 version: 3.0.0-alpha.1
 repository: https://github.com/dartondox/dox-scheduler
 homepage: https://dartondox.dev
