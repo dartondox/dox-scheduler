@@ -11,8 +11,8 @@ void schedule(Schedule s) {
   s.call('count', () => runs++);
 }
 
-SchedulerService service(bool inProcess, CacheStore store) {
-  return SchedulerService(
+SchedulerProvider provider(bool inProcess, CacheStore store) {
+  return SchedulerProvider(
     schedule: schedule,
     config: ScheduleConfig(inProcess: inProcess),
     clock: FakeClock(DateTime.utc(2026, 10, 25)),
@@ -28,14 +28,14 @@ void main() {
   });
 
   test('off by default', () async {
-    SchedulerService s = service(false, CacheStore(MemoryDriver()));
+    SchedulerProvider s = provider(false, CacheStore(MemoryDriver()));
     await s.setup();
     expect(s.scheduler, isNull);
     await s.shutdown();
   });
 
   test('runs in isolate 1 and stops on shutdown', () async {
-    SchedulerService s = service(true, CacheStore(MemoryDriver()));
+    SchedulerProvider s = provider(true, CacheStore(MemoryDriver()));
     await s.setup();
     expect(s.scheduler, isNotNull);
     while (runs < 3) {
@@ -50,7 +50,7 @@ void main() {
 
   test('other isolates do not run it', () async {
     Dox().isolateId = 2;
-    SchedulerService s = service(true, CacheStore(MemoryDriver()));
+    SchedulerProvider s = provider(true, CacheStore(MemoryDriver()));
     await s.setup();
     expect(s.scheduler, isNull);
   });

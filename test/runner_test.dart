@@ -20,7 +20,7 @@ void schedule(Schedule s) {
   s.call('broken', () => throw StateError('boom')).dailyAt('03:00');
 }
 
-class FakeService implements DoxService, DoxShutdown {
+class FakeProvider extends DoxProvider {
   static List<String> log = <String>[];
 
   @override
@@ -35,12 +35,12 @@ class FakeService implements DoxService, DoxShutdown {
 }
 
 /// must be skipped by the runner
-class InProcess extends SchedulerService {
+class InProcess extends SchedulerProvider {
   InProcess() : super(schedule: schedule);
 
   @override
   Future<void> setup() async {
-    FakeService.log.add('in-process');
+    FakeProvider.log.add('in-process');
   }
 }
 
@@ -56,7 +56,7 @@ SchedulerRunner runner(StringBuffer out, {DateTime? now, AppConfig? app}) {
 void main() {
   setUp(() {
     ran.clear();
-    FakeService.log.clear();
+    FakeProvider.log.clear();
   });
 
   test('list', () async {
@@ -120,22 +120,25 @@ void main() {
     expect(out.toString(), contains('Usage: dart run bin/schedule.dart'));
   });
 
-  test('with app: starts and stops services, skips SchedulerService', () async {
-    AppConfig app = AppConfig(
-      appKey: 'a' * 32,
-      services: <DoxService>[FakeService(), InProcess()],
-      cache: const CacheConfig(
-        defaultStore: 'memory',
-        stores: <String, Map<String, dynamic>>{
-          'memory': <String, dynamic>{'driver': 'memory'},
-        },
-      ),
-    );
-    StringBuffer out = StringBuffer();
-    expect(await runner(out, app: app).run(<String>['run']), 0);
-    expect(FakeService.log, <String>['setup', 'shutdown']);
-    expect(ran, contains('cleanup'));
-  });
+  test(
+    'with app: starts and stops providers, skips SchedulerProvider',
+    () async {
+      AppConfig app = AppConfig(
+        appKey: 'a' * 32,
+        providers: <DoxProvider>[FakeProvider(), InProcess()],
+        cache: const CacheConfig(
+          defaultStore: 'memory',
+          stores: <String, Map<String, dynamic>>{
+            'memory': <String, dynamic>{'driver': 'memory'},
+          },
+        ),
+      );
+      StringBuffer out = StringBuffer();
+      expect(await runner(out, app: app).run(<String>['run']), 0);
+      expect(FakeProvider.log, <String>['setup', 'shutdown']);
+      expect(ran, contains('cleanup'));
+    },
+  );
 
   test(
     'work: SIGINT stops it after the running task ends',
