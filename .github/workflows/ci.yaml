@@ -10,12 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Redis for test/redis_test.dart. It boots while the next steps run.
+      - run: |
+          docker run -d --name redis -p 6379:6379 \
+            --health-cmd "redis-cli ping" --health-interval 2s redis:7
       - uses: dart-lang/setup-dart@v1
         with:
           sdk: stable
       - run: dart pub get
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze --fatal-infos
-      # no tests yet in the first commits
-      - run: if [ -d test ]; then dart test; fi
+      - name: Wait for Redis
+        run: |
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' redis)" = healthy ] && exit 0
+            sleep 1
+          done
+          docker logs redis; exit 1
+      - run: dart test
+        env:
+          REDIS_PORT: '6379'
       - run: dart pub publish --dry-run
