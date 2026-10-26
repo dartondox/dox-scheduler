@@ -1,6 +1,6 @@
 name: dox_scheduler
 description: "Task scheduler for the Dox framework: run functions or queue jobs on a cron schedule, once per tick across isolates and servers."
-version: 3.0.0-alpha.1
+version: 3.0.0-alpha.2
 repository: https://github.com/dartondox/dox-scheduler
 homepage: https://dartondox.dev
 
@@ -9,7 +9,7 @@ environment:
 
 dependencies:
   dox_cache: ^3.0.0-alpha.9
-  dox_core: ^3.0.0-alpha.9
+  dox_core: ^3.0.0-alpha.15
   timezone: ^0.11.2
 
 dev_dependencies:

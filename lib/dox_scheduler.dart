@@ -9,4 +9,4 @@ export 'src/schedule_zone.dart';
 export 'src/scheduled_task.dart';
 export 'src/scheduler.dart';
 export 'src/scheduler_runner.dart';
-export 'src/scheduler_service.dart';
+export 'src/scheduler_provider.dart';

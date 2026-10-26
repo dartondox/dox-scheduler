@@ -6,7 +6,7 @@
 class ScheduleConfig {
   const ScheduleConfig({this.inProcess = false, this.store});
 
-  /// Run the schedule inside the running Dox app (`SchedulerService`).
+  /// Run the schedule inside the running Dox app (`SchedulerProvider`).
   /// Off by default: run `dart run bin/schedule.dart work` instead.
   final bool inProcess;
 

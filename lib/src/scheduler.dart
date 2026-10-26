@@ -32,7 +32,7 @@ enum TaskOutcome {
   failed,
 }
 
-/// Runs the tasks. `SchedulerRunner` and `SchedulerService` use it.
+/// Runs the tasks. `SchedulerRunner` and `SchedulerProvider` use it.
 ///
 /// ```
 /// Scheduler scheduler = Scheduler(tasks: s.tasks, store: store);

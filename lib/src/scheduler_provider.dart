@@ -11,14 +11,14 @@ import 'scheduler.dart';
 /// `ScheduleConfig(inProcess: true)`. Extend it in your app, so the
 /// generated container finds it:
 /// ```
-/// class ScheduleService extends SchedulerService {
-///   ScheduleService() : super(schedule: schedule, config: scheduleConfig);
+/// class ScheduleProvider extends SchedulerProvider {
+///   ScheduleProvider() : super(schedule: schedule, config: scheduleConfig);
 /// }
 /// ```
 /// Only the first isolate runs the tasks. The once-per-tick lock keeps
 /// many servers from running a task twice (with a Redis store).
-class SchedulerService implements DoxService, DoxShutdown {
-  SchedulerService({
+class SchedulerProvider extends DoxProvider {
+  SchedulerProvider({
     required this.schedule,
     this.config = const ScheduleConfig(),
     this.clock = const ScheduleClock(),

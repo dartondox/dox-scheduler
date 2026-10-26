@@ -9,7 +9,7 @@ import 'schedule.dart';
 import 'schedule_config.dart';
 import 'scheduled_task.dart';
 import 'scheduler.dart';
-import 'scheduler_service.dart';
+import 'scheduler_provider.dart';
 
 /// The command line of `bin/schedule.dart`:
 /// ```
@@ -35,7 +35,7 @@ class SchedulerRunner {
   /// Your function that adds the tasks.
   final void Function(Schedule s) schedule;
 
-  /// The app config. When set, the runner starts the app services (like
+  /// The app config. When set, the runner starts the app providers (like
   /// the database) and the cache stores before the tasks run.
   final AppConfig? app;
 
@@ -165,7 +165,7 @@ Usage: dart run bin/schedule.dart <command>
     Schedule s,
     Future<int> Function(Scheduler scheduler) command,
   ) async {
-    List<DoxService> services = await _startApp();
+    List<DoxProvider> providers = await _startApp();
     try {
       Scheduler scheduler = Scheduler(
         tasks: s.tasks,
@@ -175,35 +175,33 @@ Usage: dart run bin/schedule.dart <command>
       );
       return await command(scheduler);
     } finally {
-      await _stopApp(services);
+      await _stopApp(providers);
     }
   }
 
-  Future<List<DoxService>> _startApp() async {
+  Future<List<DoxProvider>> _startApp() async {
     AppConfig? appConfig = app;
-    if (appConfig == null) return <DoxService>[];
+    if (appConfig == null) return <DoxProvider>[];
     Dox().initialize(appConfig);
-    List<DoxService> services = <DoxService>[];
+    List<DoxProvider> providers = <DoxProvider>[];
     Set<Type> seen = <Type>{};
-    for (DoxService service in <DoxService>[
-      ...appConfig.services,
-      ...Dox().ioc.services,
+    for (DoxProvider provider in <DoxProvider>[
+      ...appConfig.providers,
+      ...Dox().ioc.providers,
     ]) {
       // this command is the scheduler: do not start a second one
-      if (service is SchedulerService || !seen.add(service.runtimeType)) {
+      if (provider is SchedulerProvider || !seen.add(provider.runtimeType)) {
         continue;
       }
-      await service.setup();
-      services.add(service);
+      await provider.setup();
+      providers.add(provider);
     }
-    return services;
+    return providers;
   }
 
-  Future<void> _stopApp(List<DoxService> services) async {
-    for (DoxService service in services) {
-      if (service is DoxShutdown) {
-        await (service as DoxShutdown).shutdown();
-      }
+  Future<void> _stopApp(List<DoxProvider> providers) async {
+    for (DoxProvider provider in providers) {
+      await provider.shutdown();
     }
     if (app != null) await Dox().cache.close();
   }
