@@ -11,8 +11,9 @@ class ScheduleConfig {
   final bool inProcess;
 
   /// The cache store for the locks (a store name of `AppConfig.cache`).
-  /// Null: the default store. A store without locks (file, null) falls
-  /// back to memory. Memory locks work inside one process only; use a
-  /// Redis store when many servers run the schedule.
+  /// Null: the default store. A store without locks (null) falls back to
+  /// memory. Memory and file locks work inside one server only; use a
+  /// Redis store when many servers run the schedule. The scheduler prints
+  /// a warning at start when the store is not shared.
   final String? store;
 }

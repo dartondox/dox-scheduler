@@ -1,3 +1,7 @@
+## Unreleased
+
+- Print one warning to stderr at start when a task uses `onOneServer()` but the lock store (memory, file or null) is not shared between servers. New optional `err` sink on `Scheduler`. No behaviour change.
+
 ## 3.0.0
 
 - The first stable release.
