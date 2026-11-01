@@ -180,6 +180,53 @@ void main() {
       expect(runs, 2);
     });
 
+    test(
+      'a timed-out run keeps the overlap lock until its work ends',
+      () async {
+        Completer<void> gate = Completer<void>();
+        int runs = 0;
+        Schedule s = Schedule();
+        ScheduledTask task = s
+            .call('a', () {
+              runs++;
+              return gate.future;
+            })
+            .withoutOverlapping()
+            .timeout(const Duration(milliseconds: 10))
+            .onEveryServer();
+        Scheduler scheduler = make(s);
+        expect(await scheduler.runTask(task, tick), TaskOutcome.failed);
+        // the work still runs: the next tick must not start a second run
+        expect(
+          await scheduler.runTask(task, tick.add(const Duration(minutes: 1))),
+          TaskOutcome.skipped,
+        );
+        gate.complete();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          await scheduler.runTask(task, tick.add(const Duration(minutes: 2))),
+          TaskOutcome.ran,
+        );
+        expect(runs, 2);
+      },
+    );
+
+    test('close frees the lock of a timed-out run', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .call('a', () => Completer<void>().future)
+          .withoutOverlapping()
+          .timeout(const Duration(milliseconds: 10))
+          .onEveryServer();
+      Scheduler scheduler = make(s);
+      expect(await scheduler.runTask(task, tick), TaskOutcome.failed);
+      await scheduler.close();
+      expect(
+        await scheduler.runTask(task, tick.add(const Duration(minutes: 1))),
+        TaskOutcome.failed,
+      );
+    });
+
     test('without the option, runs overlap', () async {
       Completer<void> gate = Completer<void>();
       Schedule s = Schedule();

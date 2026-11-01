@@ -67,6 +67,9 @@ class Scheduler {
   /// Running tasks, so a stop can wait for them.
   final Set<Future<TaskOutcome>> _running = <Future<TaskOutcome>>{};
 
+  /// Overlap locks of timed-out runs whose work still goes on.
+  final Set<CacheLock> _lateLocks = <CacheLock>{};
+
   bool _stopping = false;
   final Completer<void> _stopSignal = Completer<void>();
 
@@ -183,6 +186,17 @@ class Scheduler {
       await runDue(tick: late.isAfter(next) ? late : next);
     }
     await idle();
+    await close();
+  }
+
+  /// Free the overlap locks that timed-out runs still hold. Call it when
+  /// the process ends, so the next process can run those tasks. [work]
+  /// calls it after a stop.
+  Future<void> close() async {
+    for (CacheLock lock in List<CacheLock>.of(_lateLocks)) {
+      _lateLocks.remove(lock);
+      await _release(lock);
+    }
   }
 
   /// Stop [work]: no new task starts. Running tasks can finish.
@@ -224,11 +238,19 @@ class Scheduler {
     }
     Stopwatch watch = Stopwatch()..start();
     _log('run ${task.name}');
+    bool workEnded = true;
+    Future<void>? ended;
     try {
       for (TaskCallback hook in task.beforeHooks) {
         await hook();
       }
       Future<void> work = Future<void>.sync(task.callback);
+      workEnded = false;
+      // never throws: it only tells when the work really ends
+      ended = work.then<void>(
+        (_) => workEnded = true,
+        onError: (Object _) => workEnded = true,
+      );
       Duration? limit = task.timeoutAfter;
       await (limit == null ? work : work.timeout(limit));
       _log('done ${task.name} (${watch.elapsedMilliseconds} ms)');
@@ -240,8 +262,22 @@ class Scheduler {
       return TaskOutcome.failed;
     } finally {
       await _hooks(task, task.afterHooks);
-      await _release(overlap);
+      await _releaseWhenEnded(overlap, workEnded ? null : ended);
     }
+  }
+
+  /// Free [lock] now, or when [ended] completes. A timed-out run keeps
+  /// its work going, so `withoutOverlapping()` keeps the lock until then.
+  /// The lock always has a ttl, so a hung task frees it at the ttl.
+  Future<void> _releaseWhenEnded(CacheLock? lock, Future<void>? ended) async {
+    if (lock == null) return;
+    if (ended == null) return _release(lock);
+    _lateLocks.add(lock);
+    unawaited(
+      ended.then((_) {
+        if (_lateLocks.remove(lock)) return _release(lock);
+      }),
+    );
   }
 
   /// filters, then the once-per-tick lock

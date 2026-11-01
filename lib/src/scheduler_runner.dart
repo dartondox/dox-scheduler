@@ -173,7 +173,12 @@ Usage: dart run bin/schedule.dart <command>
         clock: clock,
         out: out,
       );
-      return await command(scheduler);
+      try {
+        return await command(scheduler);
+      } finally {
+        // the process ends: free the locks of timed-out runs
+        await scheduler.close();
+      }
     } finally {
       await _stopApp(providers);
     }
@@ -193,10 +198,35 @@ Usage: dart run bin/schedule.dart <command>
       if (provider is SchedulerProvider || !seen.add(provider.runtimeType)) {
         continue;
       }
-      await provider.setup();
+      try {
+        await provider.setup();
+      } catch (_) {
+        await _undoStart(providers);
+        rethrow;
+      }
       providers.add(provider);
     }
     return providers;
+  }
+
+  /// A setup threw: shut down the [started] providers in reverse order.
+  /// Their errors are logged, so the setup error is the one thrown.
+  Future<void> _undoStart(List<DoxProvider> started) async {
+    for (DoxProvider provider in started.reversed) {
+      try {
+        await provider.shutdown();
+      } catch (error) {
+        out.writeln(
+          '[schedule] shutdown of ${provider.runtimeType} failed: '
+          '$error',
+        );
+      }
+    }
+    try {
+      await Dox().cache.close();
+    } catch (error) {
+      out.writeln('[schedule] cache not closed: $error');
+    }
   }
 
   Future<void> _stopApp(List<DoxProvider> providers) async {
