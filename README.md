@@ -180,6 +180,8 @@ There is no database cache store yet, so the database can not hold the lock. Use
 
 Dart can not stop a running function.
 After the timeout, the run counts as failed and the hooks run, but the work may go on.
+With `withoutOverlapping()`, the lock stays until the work really ends, or until the lock expires.
+So a timed-out run still blocks the next run.
 
 ## Hooks
 

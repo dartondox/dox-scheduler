@@ -173,7 +173,12 @@ Usage: dart run bin/schedule.dart <command>
         clock: clock,
         out: out,
       );
-      return await command(scheduler);
+      try {
+        return await command(scheduler);
+      } finally {
+        // the process ends: free the locks of timed-out runs
+        await scheduler.close();
+      }
     } finally {
       await _stopApp(providers);
     }
