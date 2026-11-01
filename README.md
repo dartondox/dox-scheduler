@@ -180,8 +180,11 @@ There is no database cache store yet, so the database can not hold the lock. Use
 
 Dart can not stop a running function.
 After the timeout, the run counts as failed and the hooks run, but the work may go on.
-With `withoutOverlapping()`, the lock stays until the work really ends, or until the lock expires.
-So a timed-out run still blocks the next run.
+With `withoutOverlapping()`, the lock works like this after a timeout:
+
+- In `work`, the lock stays until the work really ends, or until the lock expires. While it stays, the next runs of this task are skipped.
+- When the command ends (`run` from cron, or `work` after a stop), the lock is freed, even if the work still goes on. So the next `run` can start a second run.
+- A task that hangs after its timeout is skipped until the lock expires (24 hours by default). Pass a shorter expiry if you want, like `withoutOverlapping(Duration(minutes: 30))`.
 
 ## Hooks
 
