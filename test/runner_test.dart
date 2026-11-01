@@ -44,6 +44,30 @@ class InProcess extends SchedulerProvider {
   }
 }
 
+class OtherProvider extends DoxProvider {
+  @override
+  void setup() {
+    FakeProvider.log.add('other setup');
+  }
+
+  @override
+  void shutdown() {
+    FakeProvider.log.add('other shutdown');
+  }
+}
+
+class BrokenProvider extends DoxProvider {
+  @override
+  void setup() {
+    throw StateError('setup failed');
+  }
+
+  @override
+  void shutdown() {
+    FakeProvider.log.add('broken shutdown');
+  }
+}
+
 SchedulerRunner runner(StringBuffer out, {DateTime? now, AppConfig? app}) {
   return SchedulerRunner(
     schedule: schedule,
@@ -139,6 +163,35 @@ void main() {
       expect(ran, contains('cleanup'));
     },
   );
+
+  test('with app: a setup error shuts down the started providers', () async {
+    AppConfig app = AppConfig(
+      appKey: 'a' * 32,
+      providers: <DoxProvider>[
+        FakeProvider(),
+        OtherProvider(),
+        BrokenProvider(),
+      ],
+      cache: const CacheConfig(
+        defaultStore: 'memory',
+        stores: <String, Map<String, dynamic>>{
+          'memory': <String, dynamic>{'driver': 'memory'},
+        },
+      ),
+    );
+    StringBuffer out = StringBuffer();
+    await expectLater(
+      runner(out, app: app).run(<String>['run']),
+      throwsA(isA<StateError>()),
+    );
+    expect(FakeProvider.log, <String>[
+      'setup',
+      'other setup',
+      'other shutdown',
+      'shutdown',
+    ]);
+    expect(ran, isEmpty);
+  });
 
   test(
     'work: SIGINT stops it after the running task ends',
