@@ -71,7 +71,7 @@ class Scheduler {
   final Completer<void> _stopSignal = Completer<void>();
 
   /// The cache store for the locks: [name] of [manager], or the default
-  /// store. A store without locks (null, and file before dox_cache 3.0.1)
+  /// store. A store without locks (null, and file before dox_cache 3.0.2)
   /// gives a memory store. See [warnIfLockNotShared].
   static CacheStore lockStore(CacheManager manager, String? name) {
     CacheStore store = manager.store(name);
