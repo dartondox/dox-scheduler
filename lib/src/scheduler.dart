@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dox_cache/dox_cache.dart';
 
@@ -44,7 +45,9 @@ class Scheduler {
     required this.store,
     this.clock = const ScheduleClock(),
     StringSink? out,
-  }) : out = out ?? StringBuffer();
+    StringSink? err,
+  }) : out = out ?? StringBuffer(),
+       err = err ?? stderr;
 
   final List<ScheduledTask> tasks;
 
@@ -56,6 +59,11 @@ class Scheduler {
   /// Log lines go here.
   final StringSink out;
 
+  /// Warnings go here. Default: stderr.
+  final StringSink err;
+
+  bool _lockChecked = false;
+
   /// Running tasks, so a stop can wait for them.
   final Set<Future<TaskOutcome>> _running = <Future<TaskOutcome>>{};
 
@@ -63,7 +71,8 @@ class Scheduler {
   final Completer<void> _stopSignal = Completer<void>();
 
   /// The cache store for the locks: [name] of [manager], or the default
-  /// store. A store without locks (file, null) gives a memory store.
+  /// store. A store without locks (null, and file before dox_cache 3.0.1)
+  /// gives a memory store. See [warnIfLockNotShared].
   static CacheStore lockStore(CacheManager manager, String? name) {
     CacheStore store = manager.store(name);
     try {
@@ -72,6 +81,30 @@ class Scheduler {
     } on UnsupportedError {
       return CacheStore(MemoryDriver());
     }
+  }
+
+  /// Print one warning to [err] when a task uses `onOneServer()` but the
+  /// lock store is not shared between servers (memory or file). Then the
+  /// lock works only inside one server. It prints at most once.
+  /// `runDue` and `work` call it.
+  void warnIfLockNotShared() {
+    if (_lockChecked) return;
+    _lockChecked = true;
+    CacheDriver driver = store.driver;
+    // ponytail: only the drivers we know are local; a custom driver may be shared
+    if (driver is! MemoryDriver && driver is! FileDriver) return;
+    bool oneServer = false;
+    for (ScheduledTask task in tasks) {
+      if (task.oneServer) oneServer = true;
+    }
+    if (!oneServer) return;
+    String kind = driver is FileDriver ? 'file' : 'memory';
+    err.writeln(
+      '[schedule] warning: the lock store is a $kind store. It is not '
+      'shared between servers, so onOneServer() works only inside one '
+      'server. When many servers run the schedule, each server runs the '
+      "task. Use a Redis cache store: ScheduleConfig(store: 'redis').",
+    );
   }
 
   /// The start of the minute of [time], in UTC.
@@ -89,6 +122,7 @@ class Scheduler {
     DateTime? tick,
     bool waitForBackground = false,
   }) async {
+    warnIfLockNotShared();
     DateTime minute = minuteOf(tick ?? clock.now());
     Map<String, TaskOutcome> outcomes = <String, TaskOutcome>{};
     Map<String, Future<TaskOutcome>> background =
@@ -135,6 +169,7 @@ class Scheduler {
   /// tick is the next full minute. After [stop] it waits for the
   /// running tasks.
   Future<void> work() async {
+    warnIfLockNotShared();
     while (!_stopping) {
       DateTime now = clock.now();
       DateTime next = minuteOf(now).add(const Duration(minutes: 1));

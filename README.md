@@ -162,12 +162,19 @@ The lock is not released, so a late server can not run the same minute again.
 The locks use a [cache](https://dartondox.dev/digging-deeper/cache/) store.
 
 > **Many servers need Redis.**
-> A `memory` store lives inside one process.
+> A `memory` store lives inside one process. A `file` store lives on one machine.
 > It works for one `work` process, or for many isolates of one server.
 > When many servers run the schedule, set a Redis store:
 > `ScheduleConfig(store: 'redis')`.
 
-When the store has no locks (`file`, `null`), the scheduler uses a memory store.
+When the store has no locks (`null`), the scheduler uses a memory store.
+
+At start, the scheduler prints one warning to stderr when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
+These stores are not shared between servers, so the lock works only inside one server.
+The sample app uses `file` by default, so you see this warning until you set a Redis store.
+With one server you can ignore it.
+
+There is no database cache store yet, so the database can not hold the lock. Use Redis.
 
 ### Timeout
 

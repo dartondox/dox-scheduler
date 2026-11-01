@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
@@ -14,6 +15,7 @@ Scheduler make(Schedule s, {CacheStore? store, FakeClock? clock}) {
     tasks: s.tasks,
     store: store ?? CacheStore(MemoryDriver()),
     clock: clock ?? FakeClock(tick),
+    err: StringBuffer(),
   );
 }
 
@@ -257,6 +259,56 @@ void main() {
         Scheduler.lockStore(manager, 'memory'),
         same(manager.store('memory')),
       );
+    });
+  });
+
+  group('lock warning |', () {
+    Scheduler withStore(Schedule s, CacheStore store, StringBuffer err) {
+      return Scheduler(
+        tasks: s.tasks,
+        store: store,
+        clock: FakeClock(tick),
+        err: err,
+      );
+    }
+
+    test('prints once with a file store', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      StringBuffer err = StringBuffer();
+      Schedule s = Schedule();
+      s.call('a', () {});
+      Scheduler scheduler = withStore(
+        s,
+        CacheStore(FileDriver(directory: dir)),
+        err,
+      );
+      await scheduler.runDue(tick: tick);
+      await scheduler.runDue(tick: tick.add(const Duration(minutes: 1)));
+      expect('warning'.allMatches(err.toString()).length, 1);
+      expect(err.toString(), contains('file store'));
+      expect(err.toString(), contains("ScheduleConfig(store: 'redis')"));
+    });
+
+    test('not printed with a shared store', () async {
+      StringBuffer err = StringBuffer();
+      Schedule s = Schedule();
+      s.call('a', () {});
+      // a Redis store; no command is sent, so no Redis server is needed
+      CacheStore redis = CacheStore(
+        const RedisDriverFactory().create(<String, dynamic>{}),
+      );
+      addTearDown(redis.driver.close);
+      withStore(s, redis, err).warnIfLockNotShared();
+      expect(err.toString(), isEmpty);
+    });
+
+    test('not printed when no task uses onOneServer', () async {
+      StringBuffer err = StringBuffer();
+      Schedule s = Schedule();
+      s.call('a', () {}).onEveryServer();
+      await withStore(s, CacheStore(MemoryDriver()), err).runDue(tick: tick);
+      expect(err.toString(), isEmpty);
     });
   });
 
