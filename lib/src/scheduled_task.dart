@@ -191,7 +191,8 @@ class ScheduledTask {
   // ---------------------------------------------------------------------
 
   /// Run only when the time of day (in the task zone) is from [start] to
-  /// [end], both included. `between('22:00', '06:00')` crosses midnight.
+  /// [end], both included. `between('22:00', '06:00')` crosses midnight. An hour
+  /// alone works too: `between('9', '17')` is 09:00 to 17:00.
   ScheduledTask between(String start, String end) {
     List<int> from = _time(start);
     List<int> to = _time(end);
