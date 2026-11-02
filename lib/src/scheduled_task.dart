@@ -113,7 +113,7 @@ class ScheduledTask {
     return dailyAt('00:00');
   }
 
-  /// Every day at [time], like `'02:00'`.
+  /// Every day at [time], like `'02:00'`. An hour alone (`'13'`) is 13:00.
   ScheduledTask dailyAt(String time) {
     List<int> hm = _time(time);
     _set(1, '${hm[0]}');
@@ -364,10 +364,12 @@ class ScheduledTask {
 
   static List<int> _time(String time) {
     List<String> parts = time.split(':');
+    // an hour alone ('13') is 13:00, like Laravel
+    if (parts.length == 1) parts.add('0');
     int? hour = parts.length == 2 ? int.tryParse(parts[0]) : null;
     int? minute = parts.length == 2 ? int.tryParse(parts[1]) : null;
     if (hour == null || minute == null) {
-      throw FormatException('Time must be HH:mm', time);
+      throw FormatException('Time must be HH:mm or HH', time);
     }
     _check(hour, 0, 23, 'hour');
     _check(minute, 0, 59, 'minute');

@@ -32,6 +32,7 @@ void main() {
       expect(cron(task().daily()), '0 0 * * *');
       expect(cron(task().dailyAt('02:30')), '30 2 * * *');
       expect(cron(task().dailyAt('2:05')), '5 2 * * *');
+      expect(cron(task().dailyAt('13')), '0 13 * * *');
       expect(cron(task().twiceDaily()), '0 1,13 * * *');
       expect(cron(task().twiceDaily(8, 20)), '0 8,20 * * *');
     });
@@ -61,6 +62,8 @@ void main() {
     test('bad values throw', () {
       expect(() => task().dailyAt('25:00'), throwsRangeError);
       expect(() => task().dailyAt('2pm'), throwsFormatException);
+      expect(() => task().dailyAt(''), throwsFormatException);
+      expect(() => task().dailyAt('24'), throwsRangeError);
       expect(() => task().hourlyAt(60), throwsRangeError);
       expect(() => task().monthlyOn(0), throwsRangeError);
       expect(() => task().weeklyOn(8), throwsRangeError);
