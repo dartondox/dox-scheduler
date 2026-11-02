@@ -102,6 +102,30 @@ void main() {
     expect(ran, isEmpty);
   });
 
+  test('list with ScheduleConfig timezone', () async {
+    StringBuffer out = StringBuffer();
+    int code = await SchedulerRunner(
+      schedule: schedule,
+      config: const ScheduleConfig(timezone: 'Asia/Yangon'),
+      clock: FakeClock(DateTime.utc(2026, 10, 25, 1, 30)),
+      out: out,
+    ).run(<String>['list']);
+    expect(code, 0);
+    List<String> lines = out.toString().trim().split('\n');
+    // cleanup gets the config zone: 02:00 in Yangon
+    expect(lines[1], contains('0 2 * * * Asia/Yangon'));
+    expect(lines[1], endsWith('2026-10-26 02:00 Asia/Yangon'));
+  });
+
+  test('an unknown ScheduleConfig timezone throws', () async {
+    SchedulerRunner r = SchedulerRunner(
+      schedule: schedule,
+      config: const ScheduleConfig(timezone: 'Mars/Base'),
+      out: StringBuffer(),
+    );
+    expect(() => r.run(<String>['list']), throwsArgumentError);
+  });
+
   test('run: due tasks once, exit 0', () async {
     StringBuffer out = StringBuffer();
     expect(await runner(out).run(<String>['run']), 0);

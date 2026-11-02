@@ -49,7 +49,7 @@ class SchedulerProvider extends DoxProvider {
     if (!config.inProcess || Dox().isolateId != 1 || scheduler != null) {
       return;
     }
-    Schedule s = Schedule();
+    Schedule s = Schedule(timezone: config.timezone);
     schedule(s);
     Scheduler started = Scheduler(
       tasks: s.tasks,

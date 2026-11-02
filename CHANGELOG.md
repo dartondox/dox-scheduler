@@ -1,5 +1,9 @@
 ## Unreleased
 
+- New `ScheduleConfig(timezone: 'Asia/Yangon')`: the default time zone of every task. `Schedule({String? timezone})` takes it too. A task's own `timezone()` still wins. Null (the default) is UTC, like before. An unknown name throws an `ArgumentError`.
+- New `environments(['production'])` filter: the task runs only when `APP_ENV` is one of the names. Case and spaces do not matter. It is checked at run time, with `when()` and `skip()`.
+- New frequencies: `everyThreeMinutes`, `everyFourMinutes`, `everyTwoHours`, `everyThreeHours`, `everyFourHours`, `everySixHours`, `everyOddHour`, `twiceDailyAt`, `at`, `lastDayOfMonth`, `twiceMonthly`, `quarterly`, `quarterlyOn`, `yearlyOn`, and `mondays()` to `sundays()`.
+- New `unlessBetween(start, end)` filter: the opposite of `between()`. It works in `isDue`, `nextRun` and `list`.
 - Fix: `dailyAt('13')` (an hour with no minutes) now means 13:00, like Laravel. Before, it threw a `FormatException`. The same works for `weeklyOn`, `monthlyOn` and `between`.
 - Print one warning to stderr at start when a task uses `onOneServer()` but the lock store (memory, file or null) is not shared between servers. New optional `err` sink on `Scheduler`. No behaviour change.
 - With `timeout()` and `withoutOverlapping()` in `work`, the overlap lock now stays until the work really ends, or until the lock expires. Before, the lock was freed at the timeout while the work went on, so a second run could start. When the command ends (`run`, or `work` after a stop), the lock is still freed, even if the work goes on. This is the same as 3.0.0. New `Scheduler.close()` frees these locks; `work()` and `SchedulerRunner` call it.

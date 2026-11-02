@@ -60,7 +60,7 @@ Usage: dart run bin/schedule.dart <command>
   /// Run the command of [args]. Gives the exit code.
   Future<int> run(List<String> args) async {
     String command = args.isEmpty ? 'work' : args.first;
-    Schedule s = Schedule();
+    Schedule s = Schedule(timezone: config.timezone);
     schedule(s);
     switch (command) {
       case 'list':
