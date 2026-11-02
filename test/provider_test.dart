@@ -48,6 +48,19 @@ void main() {
     expect(s.scheduler, isNull);
   });
 
+  test('uses the ScheduleConfig timezone', () async {
+    SchedulerProvider s = SchedulerProvider(
+      schedule: schedule,
+      config: const ScheduleConfig(inProcess: true, timezone: 'Asia/Yangon'),
+      clock: FakeClock(DateTime.utc(2026, 10, 25)),
+      store: CacheStore(MemoryDriver()),
+      out: StringBuffer(),
+    );
+    await s.setup();
+    expect(s.scheduler!.tasks.single.zone.name, 'Asia/Yangon');
+    await s.shutdown();
+  });
+
   test('other isolates do not run it', () async {
     Dox().isolateId = 2;
     SchedulerProvider s = provider(true, CacheStore(MemoryDriver()));

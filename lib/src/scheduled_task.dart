@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:dox_core/dox_core.dart' show Env;
+
 import 'constants/schedule_constants.dart';
 import 'cron_expression.dart';
 import 'schedule_zone.dart';
@@ -54,6 +56,16 @@ class ScheduledTask {
   /// `between()` windows: start and end minute of the day.
   final List<List<int>> _between = <List<int>>[];
 
+  /// `unlessBetween()` windows: start and end minute of the day.
+  final List<List<int>> _unlessBetween = <List<int>>[];
+
+  /// `environments()` names, trimmed and in lower case. Null: any.
+  List<String>? _environments;
+
+  /// `lastDayOfMonth()`: the day field is `28-31`, and the day must also
+  /// be the last one of its month.
+  bool _lastDayOnly = false;
+
   /// Hooks.
   final List<TaskCallback> beforeHooks = <TaskCallback>[];
   final List<TaskCallback> afterHooks = <TaskCallback>[];
@@ -70,6 +82,7 @@ class ScheduledTask {
     List<String> fields = parsed.expression.trim().split(RegExp(r'\s+'));
     _fields.setAll(0, fields);
     this.expression = parsed;
+    _lastDayOnly = false;
     return this;
   }
 
@@ -79,6 +92,14 @@ class ScheduledTask {
 
   ScheduledTask everyTwoMinutes() {
     return _set(0, '*/2');
+  }
+
+  ScheduledTask everyThreeMinutes() {
+    return _set(0, '*/3');
+  }
+
+  ScheduledTask everyFourMinutes() {
+    return _set(0, '*/4');
   }
 
   ScheduledTask everyFiveMinutes() {
@@ -108,6 +129,31 @@ class ScheduledTask {
     return _set(0, '$minute');
   }
 
+  /// Every 2 hours, at [minute] of the hour.
+  ScheduledTask everyTwoHours([int minute = 0]) {
+    return _everyHours('*/2', minute);
+  }
+
+  /// Every 3 hours, at [minute] of the hour.
+  ScheduledTask everyThreeHours([int minute = 0]) {
+    return _everyHours('*/3', minute);
+  }
+
+  /// Every 4 hours, at [minute] of the hour.
+  ScheduledTask everyFourHours([int minute = 0]) {
+    return _everyHours('*/4', minute);
+  }
+
+  /// Every 6 hours, at [minute] of the hour.
+  ScheduledTask everySixHours([int minute = 0]) {
+    return _everyHours('*/6', minute);
+  }
+
+  /// Every odd hour (1, 3, ... 23), at [minute] of the hour.
+  ScheduledTask everyOddHour([int minute = 0]) {
+    return _everyHours('1-23/2', minute);
+  }
+
   /// Every day at 00:00.
   ScheduledTask daily() {
     return dailyAt('00:00');
@@ -126,6 +172,18 @@ class ScheduledTask {
     _check(second, 0, 23, 'hour');
     _set(1, '$first,$second');
     return _set(0, '0');
+  }
+
+  /// Every day at [first]:[minute] and [second]:[minute].
+  ScheduledTask twiceDailyAt([int first = 1, int second = 13, int minute = 0]) {
+    _check(minute, 0, 59, 'minute');
+    twiceDaily(first, second);
+    return _set(0, '$minute');
+  }
+
+  /// Same as `dailyAt()`: sets the hour and the minute only.
+  ScheduledTask at(String time) {
+    return dailyAt(time);
   }
 
   /// Every Sunday at 00:00.
@@ -153,10 +211,50 @@ class ScheduledTask {
     return dailyAt(time);
   }
 
+  /// The last day of every month at [time].
+  ScheduledTask lastDayOfMonth([String time = '00:00']) {
+    // ponytail: no `L` in the cron parser. 28-31 plus a check that
+    // tomorrow is a new month, in isDue and nextRun.
+    _set(2, '28-31');
+    dailyAt(time);
+    _lastDayOnly = true;
+    return this;
+  }
+
+  /// Every month on day [first] and day [second] at [time].
+  ScheduledTask twiceMonthly([
+    int first = 1,
+    int second = 16,
+    String time = '00:00',
+  ]) {
+    _check(first, 1, 31, 'day');
+    _check(second, 1, 31, 'day');
+    _set(2, '$first,$second');
+    return dailyAt(time);
+  }
+
+  /// January, April, July and October 1st at 00:00.
+  ScheduledTask quarterly() {
+    return quarterlyOn();
+  }
+
+  /// January, April, July and October on [day] at [time].
+  ScheduledTask quarterlyOn([int day = 1, String time = '00:00']) {
+    _set(3, '1,4,7,10');
+    return monthlyOn(day, time);
+  }
+
   /// January 1st at 00:00.
   ScheduledTask yearly() {
     _set(3, '1');
     return monthlyOn(1);
+  }
+
+  /// Every year on [month] (1-12) and [day] at [time].
+  ScheduledTask yearlyOn([int month = 1, int day = 1, String time = '00:00']) {
+    _check(month, 1, 12, 'month');
+    _set(3, '$month');
+    return monthlyOn(day, time);
   }
 
   /// Monday to Friday only.
@@ -167,6 +265,41 @@ class ScheduledTask {
   /// Saturday and Sunday only.
   ScheduledTask weekends() {
     return _set(4, '0,6');
+  }
+
+  /// Mondays only.
+  ScheduledTask mondays() {
+    return days(<int>[DateTime.monday]);
+  }
+
+  /// Tuesdays only.
+  ScheduledTask tuesdays() {
+    return days(<int>[DateTime.tuesday]);
+  }
+
+  /// Wednesdays only.
+  ScheduledTask wednesdays() {
+    return days(<int>[DateTime.wednesday]);
+  }
+
+  /// Thursdays only.
+  ScheduledTask thursdays() {
+    return days(<int>[DateTime.thursday]);
+  }
+
+  /// Fridays only.
+  ScheduledTask fridays() {
+    return days(<int>[DateTime.friday]);
+  }
+
+  /// Saturdays only.
+  ScheduledTask saturdays() {
+    return days(<int>[DateTime.saturday]);
+  }
+
+  /// Sundays only.
+  ScheduledTask sundays() {
+    return days(<int>[DateTime.sunday]);
   }
 
   /// Only on these days: `DateTime.monday` to `DateTime.sunday`.
@@ -194,9 +327,28 @@ class ScheduledTask {
   /// [end], both included. `between('22:00', '06:00')` crosses midnight. An hour
   /// alone works too: `between('9', '17')` is 09:00 to 17:00.
   ScheduledTask between(String start, String end) {
-    List<int> from = _time(start);
-    List<int> to = _time(end);
-    _between.add(<int>[from[0] * 60 + from[1], to[0] * 60 + to[1]]);
+    _between.add(_window(start, end));
+    return this;
+  }
+
+  /// Do not run when the time of day (in the task zone) is from [start] to
+  /// [end], both included. The opposite of `between()`. It can cross
+  /// midnight too: `unlessBetween('23:00', '04:00')`.
+  ScheduledTask unlessBetween(String start, String end) {
+    _unlessBetween.add(_window(start, end));
+    return this;
+  }
+
+  /// Run only when the `APP_ENV` env value is one of [names], like
+  /// `environments(['production'])`. Case and spaces do not matter. It is
+  /// checked at run time, with `when()` and `skip()`.
+  ScheduledTask environments(List<String> names) {
+    if (names.isEmpty) {
+      throw ArgumentError.value(names, 'names', 'Give at least one name');
+    }
+    _environments = <String>[
+      for (String name in names) name.trim().toLowerCase(),
+    ];
     return this;
   }
 
@@ -283,8 +435,8 @@ class ScheduledTask {
   // Checks
   // ---------------------------------------------------------------------
 
-  /// True when the cron expression and `between()` match the minute
-  /// [tick] (a UTC moment).
+  /// True when the cron expression, `between()`, `unlessBetween()` and
+  /// `lastDayOfMonth()` match the minute [tick] (a UTC moment).
   bool isDue(DateTime tick) {
     DateTime wall = zone.wall(tick);
     if (!expression.matches(wall)) return false;
@@ -294,9 +446,14 @@ class ScheduledTask {
     return _inWindows(wall);
   }
 
-  /// True when every `when()` filter gives true and no `skip()` filter
-  /// does.
+  /// True when `APP_ENV` is one of `environments()`, every `when()`
+  /// filter gives true and no `skip()` filter does.
   Future<bool> filtersPass() async {
+    List<String>? names = _environments;
+    if (names != null &&
+        !names.contains(Env.get<String>('APP_ENV').trim().toLowerCase())) {
+      return false;
+    }
     for (TaskFilter filter in _when) {
       if (!await filter()) return false;
     }
@@ -306,8 +463,8 @@ class ScheduledTask {
     return true;
   }
 
-  /// The next moment (UTC) after [from] when the cron expression and
-  /// `between()` match. `when()` and `skip()` are not checked. Null when
+  /// The next moment (UTC) after [from] when the cron expression,
+  /// `between()`, `unlessBetween()` and `lastDayOfMonth()` match. `when()` and `skip()` are not checked. Null when
   /// it never runs.
   DateTime? nextRun(DateTime from) {
     DateTime wall = zone.wall(from);
@@ -338,10 +495,19 @@ class ScheduledTask {
     return zone.isUtc ? expression.expression : '$expression ${zone.name}';
   }
 
+  /// The checks of a wall time that cron can not do.
   bool _inWindows(DateTime wall) {
-    if (_between.isEmpty) return true;
+    if (_lastDayOnly &&
+        DateTime.utc(wall.year, wall.month, wall.day + 1).month == wall.month) {
+      return false;
+    }
     int minute = wall.hour * 60 + wall.minute;
-    for (List<int> window in _between) {
+    if (_inAny(_unlessBetween, minute)) return false;
+    return _between.isEmpty || _inAny(_between, minute);
+  }
+
+  static bool _inAny(List<List<int>> windows, int minute) {
+    for (List<int> window in windows) {
       int start = window[0];
       int end = window[1];
       bool inside = start <= end
@@ -352,7 +518,21 @@ class ScheduledTask {
     return false;
   }
 
+  static List<int> _window(String start, String end) {
+    List<int> from = _time(start);
+    List<int> to = _time(end);
+    return <int>[from[0] * 60 + from[1], to[0] * 60 + to[1]];
+  }
+
+  ScheduledTask _everyHours(String hours, int minute) {
+    _check(minute, 0, 59, 'minute');
+    _set(1, hours);
+    return _set(0, '$minute');
+  }
+
   ScheduledTask _set(int position, String value) {
+    // a new day of month ends lastDayOfMonth()
+    if (position == 2) _lastDayOnly = false;
     _fields[position] = value;
     expression = CronExpression(_fields.join(' '));
     return this;

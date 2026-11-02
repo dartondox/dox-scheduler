@@ -1,3 +1,4 @@
+import 'package:dox_core/dox_core.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
 
@@ -190,6 +191,204 @@ void main() {
       }
       // 24 UTC hours: the repeated 01:00 runs once, so 23
       expect(runs, 23);
+    });
+  });
+
+  group('more frequencies |', () {
+    test('minutes and hours', () {
+      expect(cron(task().everyThreeMinutes()), '*/3 * * * *');
+      expect(cron(task().everyFourMinutes()), '*/4 * * * *');
+      expect(cron(task().everyTwoHours()), '0 */2 * * *');
+      expect(cron(task().everyThreeHours(15)), '15 */3 * * *');
+      expect(cron(task().everyFourHours()), '0 */4 * * *');
+      expect(cron(task().everySixHours(30)), '30 */6 * * *');
+      expect(cron(task().everyOddHour()), '0 1-23/2 * * *');
+      expect(cron(task().everyOddHour(5)), '5 1-23/2 * * *');
+    });
+
+    test('days', () {
+      expect(cron(task().twiceDailyAt()), '0 1,13 * * *');
+      expect(cron(task().twiceDailyAt(3, 15, 30)), '30 3,15 * * *');
+      expect(cron(task().at('07:45')), '45 7 * * *');
+      expect(cron(task().mondays()), '* * * * 1');
+      expect(cron(task().tuesdays()), '* * * * 2');
+      expect(cron(task().wednesdays()), '* * * * 3');
+      expect(cron(task().thursdays()), '* * * * 4');
+      expect(cron(task().fridays()), '* * * * 5');
+      expect(cron(task().saturdays()), '* * * * 6');
+      expect(cron(task().sundays().at('09:00')), '0 9 * * 0');
+    });
+
+    test('months and years', () {
+      expect(cron(task().lastDayOfMonth()), '0 0 28-31 * *');
+      expect(cron(task().lastDayOfMonth('23:30')), '30 23 28-31 * *');
+      expect(cron(task().twiceMonthly()), '0 0 1,16 * *');
+      expect(cron(task().twiceMonthly(5, 20, '08:00')), '0 8 5,20 * *');
+      expect(cron(task().quarterly()), '0 0 1 1,4,7,10 *');
+      expect(cron(task().quarterlyOn(15, '06:00')), '0 6 15 1,4,7,10 *');
+      expect(cron(task().yearlyOn()), '0 0 1 1 *');
+      expect(cron(task().yearlyOn(6, 30, '12:00')), '0 12 30 6 *');
+    });
+
+    test('bad values throw', () {
+      expect(() => task().everyTwoHours(60), throwsRangeError);
+      expect(() => task().everyOddHour(-1), throwsRangeError);
+      expect(() => task().twiceDailyAt(1, 24), throwsRangeError);
+      expect(() => task().twiceDailyAt(1, 13, 60), throwsRangeError);
+      expect(() => task().twiceMonthly(0), throwsRangeError);
+      expect(() => task().twiceMonthly(1, 32), throwsRangeError);
+      expect(() => task().quarterlyOn(32), throwsRangeError);
+      expect(() => task().yearlyOn(13), throwsRangeError);
+      expect(() => task().lastDayOfMonth('24:00'), throwsRangeError);
+      expect(() => task().unlessBetween('9', '25'), throwsRangeError);
+      expect(() => task().environments(<String>[]), throwsArgumentError);
+    });
+
+    test('everyOddHour isDue', () {
+      ScheduledTask t = task().everyOddHour();
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 1)), isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 23)), isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 2)), isFalse);
+    });
+  });
+
+  group('lastDayOfMonth |', () {
+    test('February, not a leap year', () {
+      ScheduledTask t = task().lastDayOfMonth();
+      expect(t.isDue(DateTime.utc(2026, 2, 28)), isTrue);
+      expect(t.nextRun(DateTime.utc(2026, 2)), DateTime.utc(2026, 2, 28));
+    });
+
+    test('February, leap year', () {
+      ScheduledTask t = task().lastDayOfMonth();
+      expect(t.isDue(DateTime.utc(2028, 2, 28)), isFalse);
+      expect(t.isDue(DateTime.utc(2028, 2, 29)), isTrue);
+      expect(t.nextRun(DateTime.utc(2028, 2)), DateTime.utc(2028, 2, 29));
+    });
+
+    test('a 30 day month', () {
+      ScheduledTask t = task().lastDayOfMonth('18:00');
+      expect(t.isDue(DateTime.utc(2026, 4, 29, 18)), isFalse);
+      expect(t.isDue(DateTime.utc(2026, 4, 30, 18)), isTrue);
+      expect(t.nextRun(DateTime.utc(2026, 4)), DateTime.utc(2026, 4, 30, 18));
+      // 31 days in May
+      expect(
+        t.nextRun(DateTime.utc(2026, 4, 30, 18)),
+        DateTime.utc(2026, 5, 31, 18),
+      );
+    });
+
+    test('in the task zone', () {
+      // Asia/Yangon is UTC+06:30: Apr 30 00:00 there is Apr 29 17:30 UTC
+      ScheduledTask t = task().lastDayOfMonth().timezone('Asia/Yangon');
+      expect(t.isDue(DateTime.utc(2026, 4, 29, 17, 30)), isTrue);
+      expect(
+        t.nextRun(DateTime.utc(2026, 4)),
+        DateTime.utc(2026, 4, 29, 17, 30),
+      );
+    });
+
+    test('a later day of month setter ends it', () {
+      ScheduledTask t = task().lastDayOfMonth().monthlyOn(28);
+      expect(t.isDue(DateTime.utc(2026, 4, 28)), isTrue);
+    });
+  });
+
+  group('unlessBetween |', () {
+    test('same day', () {
+      ScheduledTask t = task().hourly().unlessBetween('09:00', '17:00');
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 8)), isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 9)), isFalse);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 17)), isFalse);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 18)), isTrue);
+    });
+
+    test('across midnight', () {
+      ScheduledTask t = task().hourly().unlessBetween('22:00', '02:00');
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 21)), isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 23)), isFalse);
+      expect(t.isDue(DateTime.utc(2026)), isFalse);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 2)), isFalse);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 3)), isTrue);
+      expect(
+        t.nextRun(DateTime.utc(2026, 1, 1, 21, 30)),
+        DateTime.utc(2026, 1, 2, 3),
+      );
+    });
+
+    test('with between', () {
+      ScheduledTask t = task()
+          .hourly()
+          .between('08:00', '18:00')
+          .unlessBetween('12:00', '13:00');
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 11)), isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 12)), isFalse);
+      expect(
+        t.nextRun(DateTime.utc(2026, 1, 1, 11, 30)),
+        DateTime.utc(2026, 1, 1, 14),
+      );
+    });
+  });
+
+  group('environments |', () {
+    tearDown(() {
+      Env().env.remove('APP_ENV');
+    });
+
+    test('runs when APP_ENV is in the list', () async {
+      Env().env['APP_ENV'] = ' Production ';
+      ScheduledTask t = task().environments(<String>['staging', 'PRODUCTION']);
+      expect(await t.filtersPass(), isTrue);
+    });
+
+    test('skips when APP_ENV is not in the list', () async {
+      Env().env['APP_ENV'] = 'local';
+      ScheduledTask t = task().environments(<String>['production']);
+      expect(await t.filtersPass(), isFalse);
+    });
+
+    test('skips when APP_ENV is empty', () async {
+      ScheduledTask t = task().environments(<String>['production']);
+      expect(await t.filtersPass(), isFalse);
+      Env().env['APP_ENV'] = '';
+      expect(await t.filtersPass(), isFalse);
+    });
+
+    test('read at run time, not when built', () async {
+      ScheduledTask t = task().environments(<String>['production']);
+      expect(await t.filtersPass(), isFalse);
+      Env().env['APP_ENV'] = 'production';
+      expect(await t.filtersPass(), isTrue);
+    });
+
+    test('no environments: runs anywhere', () async {
+      Env().env['APP_ENV'] = 'local';
+      expect(await task().filtersPass(), isTrue);
+    });
+  });
+
+  group('Schedule timezone |', () {
+    test('null is UTC', () {
+      Schedule s = Schedule();
+      expect(s.call('a', noop).zone.isUtc, isTrue);
+    });
+
+    test('new tasks get the zone', () {
+      Schedule s = Schedule(timezone: 'Asia/Yangon');
+      ScheduledTask t = s.call('a', noop).dailyAt('02:00');
+      expect(t.zone.name, 'Asia/Yangon');
+      expect(t.nextRun(DateTime.utc(2026)), DateTime.utc(2026, 1, 1, 19, 30));
+    });
+
+    test('timezone() on the task wins', () {
+      Schedule s = Schedule(timezone: 'Asia/Yangon');
+      ScheduledTask t = s.call('a', noop).dailyAt('02:00').timezone('UTC');
+      expect(t.zone.isUtc, isTrue);
+      expect(t.isDue(DateTime.utc(2026, 1, 1, 2)), isTrue);
+    });
+
+    test('an unknown name throws', () {
+      expect(() => Schedule(timezone: 'Mars/Base'), throwsArgumentError);
     });
   });
 }

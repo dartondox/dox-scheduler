@@ -4,7 +4,7 @@
 /// ScheduleConfig scheduleConfig = ScheduleConfig(store: 'redis');
 /// ```
 class ScheduleConfig {
-  const ScheduleConfig({this.inProcess = false, this.store});
+  const ScheduleConfig({this.inProcess = false, this.store, this.timezone});
 
   /// Run the schedule inside the running Dox app (`SchedulerProvider`).
   /// Off by default: run `dart run bin/schedule.dart work` instead.
@@ -16,4 +16,9 @@ class ScheduleConfig {
   /// Redis store when many servers run the schedule. The scheduler prints
   /// a warning at start when the store is not shared.
   final String? store;
+
+  /// The default time zone of every task, like `Asia/Yangon`. Null: UTC.
+  /// A task's own `timezone()` wins. An unknown name throws an
+  /// [ArgumentError] when the schedule is made.
+  final String? timezone;
 }
