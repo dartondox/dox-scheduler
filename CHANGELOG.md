@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix: `schedule work` now ends in a few seconds after Ctrl+C or SIGTERM, once the running tasks finish. Before, it waited for the next full minute (up to 60 seconds), so `docker stop` could kill it while tasks still ran. The sleep timer is now cancelled at the stop.
 - New `ScheduleConfig(timezone: 'Asia/Yangon')`: the default time zone of every task. `Schedule({String? timezone})` takes it too. A task's own `timezone()` still wins. Null (the default) is UTC, like before. An unknown name throws an `ArgumentError`.
 - New `environments(['production'])` filter: the task runs only when `APP_ENV` is one of the names. Case and spaces do not matter. It is checked at run time, with `when()` and `skip()`.
 - New frequencies: `everyThreeMinutes`, `everyFourMinutes`, `everyTwoHours`, `everyThreeHours`, `everyFourHours`, `everySixHours`, `everyOddHour`, `twiceDailyAt`, `at`, `lastDayOfMonth`, `twiceMonthly`, `quarterly`, `quarterlyOn`, `yearlyOn`, and `mondays()` to `sundays()`.

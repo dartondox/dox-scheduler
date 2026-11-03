@@ -73,6 +73,11 @@ class Scheduler {
   bool _stopping = false;
   final Completer<void> _stopSignal = Completer<void>();
 
+  /// Timers the clock made while [work] sleeps. They are cancelled after
+  /// each sleep, so a stop does not leave a timer that keeps the process
+  /// alive until the next minute.
+  final Set<Timer> _sleepTimers = <Timer>{};
+
   /// The cache store for the locks: [name] of [manager], or the default
   /// store. A store without locks (null, and file before dox_cache 3.0.2)
   /// gives a memory store. See [warnIfLockNotShared].
@@ -177,9 +182,10 @@ class Scheduler {
       DateTime now = clock.now();
       DateTime next = minuteOf(now).add(const Duration(minutes: 1));
       await Future.any(<Future<void>>[
-        clock.sleep(next.difference(now)),
+        _sleep(next.difference(now)),
         _stopSignal.future,
       ]);
+      _cancelSleepTimers();
       if (_stopping) break;
       // after a long pause (sleeping laptop) run the minute of now
       DateTime late = minuteOf(clock.now());
@@ -203,6 +209,33 @@ class Scheduler {
   void stop() {
     _stopping = true;
     if (!_stopSignal.isCompleted) _stopSignal.complete();
+  }
+
+  /// Run `clock.sleep` in a zone that keeps its timers, so [work] can
+  /// cancel them. `sleep` keeps its old signature, so custom clocks work.
+  Future<void> _sleep(Duration duration) {
+    ZoneSpecification spec = ZoneSpecification(createTimer: _keepTimer);
+    return runZoned(() => clock.sleep(duration), zoneSpecification: spec);
+  }
+
+  // ponytail: only one-shot timers; a periodic timer in a custom sleep is not kept
+  Timer _keepTimer(
+    Zone self,
+    ZoneDelegate parent,
+    Zone zone,
+    Duration duration,
+    void Function() callback,
+  ) {
+    Timer timer = parent.createTimer(zone, duration, callback);
+    _sleepTimers.add(timer);
+    return timer;
+  }
+
+  void _cancelSleepTimers() {
+    for (Timer timer in _sleepTimers) {
+      timer.cancel();
+    }
+    _sleepTimers.clear();
   }
 
   Future<TaskOutcome> _forget(Future<TaskOutcome> run) async {

@@ -248,4 +248,35 @@ void main() {
     skip: Platform.isWindows ? 'no signals on Windows' : null,
     timeout: const Timeout(Duration(seconds: 90)),
   );
+  test(
+    'work: SIGINT with the real clock ends the process in a few seconds',
+    () async {
+      Process process = await Process.start(
+        Platform.resolvedExecutable,
+        <String>['run', 'test/fixtures/work_real_clock.dart', 'work'],
+      );
+      bool signalled = false;
+      Future<void> reading = process.stdout
+          .transform(const SystemEncoding().decoder)
+          .forEach((String chunk) {
+            if (!signalled && chunk.contains('working')) {
+              signalled = true;
+              process.kill(ProcessSignal.sigint);
+            }
+          });
+      // before the fix it waited for the next full minute
+      int code = await process.exitCode.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          process.kill(ProcessSignal.sigkill);
+          return -1;
+        },
+      );
+      await reading;
+      expect(signalled, true);
+      expect(code, 0);
+    },
+    skip: Platform.isWindows ? 'no signals on Windows' : null,
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }
