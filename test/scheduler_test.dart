@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dox_cache/dox_cache.dart';
+import 'package:dox_core/dox_core.dart' show Env;
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
 
@@ -348,6 +349,18 @@ void main() {
       addTearDown(redis.driver.close);
       withStore(s, redis, err).warnIfLockNotShared();
       expect(err.toString(), isEmpty);
+    });
+
+    test('not printed in development or local', () async {
+      addTearDown(() => Env().env.remove('APP_ENV'));
+      for (String env in <String>['development', ' Local ']) {
+        Env().env['APP_ENV'] = env;
+        StringBuffer err = StringBuffer();
+        Schedule s = Schedule();
+        s.call('a', () {});
+        withStore(s, CacheStore(MemoryDriver()), err).warnIfLockNotShared();
+        expect(err.toString(), isEmpty);
+      }
     });
 
     test('not printed when no task uses onOneServer', () async {
