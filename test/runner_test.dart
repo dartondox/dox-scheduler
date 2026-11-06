@@ -249,7 +249,7 @@ void main() {
     timeout: const Timeout(Duration(seconds: 90)),
   );
   test(
-    'work: SIGINT with the real clock ends the process in a few seconds',
+    'work: SIGINT during a long real sleep ends the process in a few seconds',
     () async {
       Process process = await Process.start(
         Platform.resolvedExecutable,
@@ -264,7 +264,7 @@ void main() {
               process.kill(ProcessSignal.sigint);
             }
           });
-      // before the fix it waited for the next full minute
+      // before the fix it always waited the full 59 s sleep
       int code = await process.exitCode.timeout(
         const Duration(seconds: 5),
         onTimeout: () {

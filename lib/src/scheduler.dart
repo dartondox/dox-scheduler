@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dox_cache/dox_cache.dart';
+import 'package:dox_core/dox_core.dart' show Env;
 
 import 'constants/schedule_constants.dart';
 import 'scheduled_task.dart';
@@ -15,7 +16,9 @@ class ScheduleClock {
     return DateTime.now().toUtc();
   }
 
-  /// Wait for [duration].
+  /// Wait for [duration]. `work` cancels every timer that starts inside
+  /// `sleep` when the sleep ends or the scheduler stops. So a custom
+  /// `sleep` must not start a timer for other work; it would never fire.
   Future<void> sleep(Duration duration) {
     return Future<void>.delayed(duration);
   }
@@ -94,10 +97,13 @@ class Scheduler {
   /// Print one warning to [err] when a task uses `onOneServer()` but the
   /// lock store is not shared between servers (memory or file). Then the
   /// lock works only inside one server. It prints at most once.
-  /// `runDue` and `work` call it.
+  /// `runDue` and `work` call it. It does not print when `APP_ENV` is
+  /// `development` or `local`: a dev machine is one server.
   void warnIfLockNotShared() {
     if (_lockChecked) return;
     _lockChecked = true;
+    String env = Env.get<String>('APP_ENV').trim().toLowerCase();
+    if (env == 'development' || env == 'local') return;
     CacheDriver driver = store.driver;
     // ponytail: only the drivers we know are local; a custom driver may be shared
     if (driver is! MemoryDriver && driver is! FileDriver) return;

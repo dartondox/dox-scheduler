@@ -74,7 +74,7 @@ The task only puts the job on the queue. A queue worker runs it.
 | `quarterly()` | January, April, July and October 1st at 00:00 |
 | `quarterlyOn(4, '14:00')` | January, April, July and October 4th at 14:00 |
 | `yearly()` | January 1st at 00:00 |
-| `yearlyOn(6, 1, '17:00')` | June 1st at 17:00 |
+| `yearlyOn(6, 1, '17:00')` | June 1st at 17:00. A day the month never has, like `yearlyOn(2, 30)`, throws |
 | `cron('*/5 9-17 * * 1-5')` | any 5 field cron expression |
 
 You can limit the days. The order of the calls does not matter.
@@ -150,7 +150,7 @@ s.call('backup', backup).daily().skip(isHoliday);
 | --- | --- |
 | `between('09:00', '17:00')` | runs only in this time of day, both ends included, in the task zone |
 | `unlessBetween('23:00', '04:00')` | does not run in this time of day, both ends included, in the task zone |
-| `environments(<String>['production'])` | runs only when `APP_ENV` is one of these names. Case does not matter. It is read at run time |
+| `environments(<String>['production'])` | runs only when `APP_ENV` is one of these names. Case does not matter. It is read at run time. A blank name throws |
 | `when(function)` | runs only when the function gives `true` |
 | `skip(function)` | does not run when the function gives `true` |
 
@@ -192,6 +192,7 @@ When the store has no locks (`null`), the scheduler uses a memory store.
 At start, the scheduler prints one warning to stderr when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
 These stores are not shared between servers, so the lock works only inside one server.
 The sample app uses `file` by default, so you see this warning until you set a Redis store.
+It does not print when `APP_ENV` is `development` or `local`, because a dev machine is one server.
 With one server you can ignore it.
 
 There is no database cache store yet, so the database can not hold the lock. Use Redis.

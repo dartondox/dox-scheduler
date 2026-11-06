@@ -240,6 +240,9 @@ class ScheduledTask {
 
   /// January, April, July and October on [day] at [time].
   ScheduledTask quarterlyOn([int day = 1, String time = '00:00']) {
+    // check first, so a bad value does not leave a half set task
+    _check(day, 1, 31, 'day');
+    _time(time);
     _set(3, '1,4,7,10');
     return monthlyOn(day, time);
   }
@@ -250,9 +253,14 @@ class ScheduledTask {
     return monthlyOn(1);
   }
 
-  /// Every year on [month] (1-12) and [day] at [time].
+  /// Every year on [month] (1-12) and [day] at [time]. A day that the
+  /// month never has, like February 30, throws. February 29 runs in leap
+  /// years only.
   ScheduledTask yearlyOn([int month = 1, int day = 1, String time = '00:00']) {
     _check(month, 1, 12, 'month');
+    // 2028 is a leap year, so February has 29 days
+    _check(day, 1, DateTime.utc(2028, month + 1, 0).day, 'day');
+    _time(time);
     _set(3, '$month');
     return monthlyOn(day, time);
   }
@@ -346,9 +354,14 @@ class ScheduledTask {
     if (names.isEmpty) {
       throw ArgumentError.value(names, 'names', 'Give at least one name');
     }
-    _environments = <String>[
+    List<String> clean = <String>[
       for (String name in names) name.trim().toLowerCase(),
     ];
+    // a blank name would match a missing APP_ENV
+    if (clean.contains('')) {
+      throw ArgumentError.value(names, 'names', 'A name can not be blank');
+    }
+    _environments = clean;
     return this;
   }
 
@@ -464,8 +477,8 @@ class ScheduledTask {
   }
 
   /// The next moment (UTC) after [from] when the cron expression,
-  /// `between()`, `unlessBetween()` and `lastDayOfMonth()` match. `when()` and `skip()` are not checked. Null when
-  /// it never runs.
+  /// `between()`, `unlessBetween()` and `lastDayOfMonth()` match.
+  /// `when()` and `skip()` are not checked. Null when it never runs.
   DateTime? nextRun(DateTime from) {
     DateTime wall = zone.wall(from);
     DateTime cursor = DateTime.utc(

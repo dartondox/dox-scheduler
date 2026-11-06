@@ -242,6 +242,26 @@ void main() {
       expect(() => task().lastDayOfMonth('24:00'), throwsRangeError);
       expect(() => task().unlessBetween('9', '25'), throwsRangeError);
       expect(() => task().environments(<String>[]), throwsArgumentError);
+      expect(
+        () => task().environments(<String>['production', ' ']),
+        throwsArgumentError,
+      );
+    });
+
+    test('a bad value does not change the task', () {
+      ScheduledTask t = task();
+      expect(() => t.quarterlyOn(32), throwsRangeError);
+      expect(() => t.quarterlyOn(1, '25:00'), throwsRangeError);
+      expect(() => t.yearlyOn(6, 32), throwsRangeError);
+      expect(() => t.yearlyOn(6, 1, 'x'), throwsFormatException);
+      expect(cron(t), '* * * * *');
+    });
+
+    test('yearlyOn rejects a day the month never has', () {
+      expect(() => task().yearlyOn(2, 30), throwsRangeError);
+      expect(() => task().yearlyOn(4, 31), throwsRangeError);
+      expect(cron(task().yearlyOn(2, 29)), '0 0 29 2 *');
+      expect(cron(task().yearlyOn(12, 31)), '0 0 31 12 *');
     });
 
     test('everyOddHour isDue', () {
@@ -286,6 +306,28 @@ void main() {
         t.nextRun(DateTime.utc(2026, 4)),
         DateTime.utc(2026, 4, 29, 17, 30),
       );
+    });
+
+    test('summer time day (Europe/London)', () {
+      // 2027-10-31: 01:00 to 02:00 happens twice; it runs at the first one
+      ScheduledTask twice = task().lastDayOfMonth('01:30');
+      twice.timezone('Europe/London');
+      expect(
+        twice.nextRun(DateTime.utc(2027, 10)),
+        DateTime.utc(2027, 10, 31, 0, 30),
+      );
+      // 2030-03-31: 01:00 to 02:00 is skipped, so March does not run
+      ScheduledTask skipped = task().lastDayOfMonth('01:30');
+      skipped.timezone('Europe/London');
+      expect(
+        skipped.nextRun(DateTime.utc(2030, 3)),
+        DateTime.utc(2030, 4, 30, 0, 30),
+      );
+    });
+
+    test('cron() ends it', () {
+      ScheduledTask t = task().lastDayOfMonth().cron('0 0 28-31 * *');
+      expect(t.isDue(DateTime.utc(2026, 4, 28)), isTrue);
     });
 
     test('a later day of month setter ends it', () {
@@ -359,6 +401,21 @@ void main() {
       expect(await t.filtersPass(), isFalse);
       Env().env['APP_ENV'] = 'production';
       expect(await t.filtersPass(), isTrue);
+    });
+
+    test('with when() and skip()', () async {
+      Env().env['APP_ENV'] = 'production';
+      bool skip = false;
+      ScheduledTask t = task()
+          .environments(<String>['production'])
+          .when(() => true)
+          .skip(() => skip);
+      expect(await t.filtersPass(), isTrue);
+      skip = true;
+      expect(await t.filtersPass(), isFalse);
+      skip = false;
+      Env().env['APP_ENV'] = 'staging';
+      expect(await t.filtersPass(), isFalse);
     });
 
     test('no environments: runs anywhere', () async {
