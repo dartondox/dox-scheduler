@@ -1,4 +1,4 @@
-## Unreleased
+## 3.1.0
 
 - Fix: `schedule work` now ends in a few seconds after Ctrl+C or SIGTERM, once the running tasks finish. Before, it waited for the next full minute (up to 60 seconds), so `docker stop` could kill it while tasks still ran. The sleep timer is now cancelled at the stop. A timer that a custom `ScheduleClock.sleep` starts is cancelled too, so do not start a timer for other work there.
 - New `ScheduleConfig(timezone: 'Asia/Yangon')`: the default time zone of every task. `Schedule({String? timezone})` takes it too. A task's own `timezone()` still wins. Null (the default) is UTC, like before. An unknown name throws an `ArgumentError`.
