@@ -295,7 +295,8 @@ report   0 * * * *                  2026-10-25 14:00 UTC
 ping     */5 * * * * Asia/Yangon    2026-10-25 20:35 Asia/Yangon
 ```
 
-The next run time checks the frequency and `between()`. It does not check `when()` and `skip()`.
+The schedule also shows the `between()`, `unlessBetween()` and `environments()` filters, like `0 * * * *, between 09:00-17:00, env production`.
+The next run time checks the frequency, `between()` and `unlessBetween()`. It does not check `environments()`, `when()` and `skip()`.
 
 ### test
 

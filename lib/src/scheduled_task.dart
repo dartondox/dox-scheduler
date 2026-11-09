@@ -508,6 +508,28 @@ class ScheduledTask {
     return zone.isUtc ? expression.expression : '$expression ${zone.name}';
   }
 
+  /// The `between()`, `unlessBetween()` and `environments()` filters as
+  /// text, like `between 09:00-17:00, env production`. Empty when the
+  /// task has none. `when()` and `skip()` are code, so they are not in it.
+  String describeFilters() {
+    return <String>[
+      for (List<int> window in _between) 'between ${_windowText(window)}',
+      for (List<int> window in _unlessBetween)
+        'unless between ${_windowText(window)}',
+      if (_environments case List<String> names) 'env ${names.join('|')}',
+    ].join(', ');
+  }
+
+  /// like `09:00-17:00`
+  static String _windowText(List<int> window) {
+    String time(int minute) {
+      String hour = '${minute ~/ 60}'.padLeft(2, '0');
+      return '$hour:${'${minute % 60}'.padLeft(2, '0')}';
+    }
+
+    return '${time(window[0])}-${time(window[1])}';
+  }
+
   /// The checks of a wall time that cron can not do.
   bool _inWindows(DateTime wall) {
     if (_lastDayOnly &&
