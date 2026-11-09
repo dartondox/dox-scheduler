@@ -136,7 +136,7 @@ Usage: dart run bin/schedule.dart <command>
     int cronWidth = 8;
     for (ScheduledTask task in tasks) {
       if (task.name.length > nameWidth) nameWidth = task.name.length;
-      int width = task.describe().length;
+      int width = _schedule(task).length;
       if (width > cronWidth) cronWidth = width;
     }
     out.writeln(
@@ -148,9 +148,16 @@ Usage: dart run bin/schedule.dart <command>
       String when = next == null ? 'never' : _format(task, next);
       out.writeln(
         '${task.name.padRight(nameWidth)}  '
-        '${task.describe().padRight(cronWidth)}  $when',
+        '${_schedule(task).padRight(cronWidth)}  $when',
       );
     }
+  }
+
+  /// the cron text and the filters, like
+  /// `0 * * * *, between 09:00-17:00, env production`
+  static String _schedule(ScheduledTask task) {
+    String filters = task.describeFilters();
+    return filters.isEmpty ? task.describe() : '${task.describe()}, $filters';
   }
 
   /// like `2026-10-26 02:00 UTC` or `2026-10-26 02:00 Asia/Yangon`

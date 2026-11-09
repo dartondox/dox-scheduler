@@ -102,6 +102,38 @@ void main() {
     expect(ran, isEmpty);
   });
 
+  test('list shows between, unlessBetween and environments', () async {
+    void filtered(Schedule s) {
+      s
+          .call('office', () {})
+          .hourly()
+          .between('9', '17:30')
+          .unlessBetween('12:00', '13:00')
+          .environments(<String>['Production', 'staging']);
+      s.call('plain', () {}).hourly();
+    }
+
+    StringBuffer out = StringBuffer();
+    int code = await SchedulerRunner(
+      schedule: filtered,
+      clock: FakeClock(DateTime.utc(2026, 10, 25, 1, 30)),
+      out: out,
+    ).run(<String>['list']);
+    expect(code, 0);
+    List<String> lines = out.toString().trim().split('\n');
+    expect(
+      lines[1],
+      contains(
+        '0 * * * *, between 09:00-17:30, unless between 12:00-13:00, '
+        'env production|staging',
+      ),
+    );
+    // the next run checks between(): not 02:00, but 09:00
+    expect(lines[1], endsWith('2026-10-25 09:00 UTC'));
+    expect(lines[2], isNot(contains('between')));
+    expect(lines[2], endsWith('2026-10-25 02:00 UTC'));
+  });
+
   test('list with ScheduleConfig timezone', () async {
     StringBuffer out = StringBuffer();
     int code = await SchedulerRunner(

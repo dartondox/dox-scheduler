@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fix: `schedule list` did not show `between()`, `unlessBetween()` and `environments()`. So a task looked like it ran all day in every environment. Now the schedule column shows them, like `0 * * * *, between 09:00-17:00, env production`. The new `ScheduledTask.describeFilters()` gives this text.
+
 ## 3.1.0
 
 - Fix: `schedule work` now ends in a few seconds after Ctrl+C or SIGTERM, once the running tasks finish. Before, it waited for the next full minute (up to 60 seconds), so `docker stop` could kill it while tasks still ran. The sleep timer is now cancelled at the stop. A timer that a custom `ScheduleClock.sleep` starts is cancelled too, so do not start a timer for other work there.
