@@ -211,6 +211,32 @@ class Scheduler {
     }
   }
 
+  /// Remove the `withoutOverlapping()` lock of each task, whoever holds
+  /// it. Gives the names of the tasks whose lock was there.
+  ///
+  /// A crash leaves the lock in the store, so the task is skipped until
+  /// the lock expires (24 hours by default). This frees it at once.
+  /// It removes only the exact lock key of each task, never other keys.
+  /// The once-per-tick locks are not touched: each one is for one minute
+  /// only, and it expires in 10 minutes.
+  ///
+  /// Do not call it while a task really runs in another process. That
+  /// task could then start a second time.
+  ///
+  /// Throws [UnsupportedError] when the store can not remove a lock that
+  /// another owner holds.
+  Future<List<String>> clearOverlapLocks() async {
+    List<String> cleared = <String>[];
+    for (ScheduledTask task in tasks) {
+      // ponytail: every task, like Laravel; a task that dropped
+      // withoutOverlapping() can still have an old lock
+      if (await store.lock(_lockName('overlap', task)).forceRelease()) {
+        cleared.add(task.name);
+      }
+    }
+    return cleared;
+  }
+
   /// Stop [work]: no new task starts. Running tasks can finish.
   void stop() {
     _stopping = true;

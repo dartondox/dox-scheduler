@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:dox_cache/dox_cache.dart' show MemoryDriver;
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
@@ -192,6 +193,34 @@ void main() {
     expect(await runner(out).run(<String>['test', 'nope']), 1);
     expect(out.toString(), contains('No task named "nope"'));
     expect(await runner(out).run(<String>['test']), 64);
+  });
+
+  test('clear-cache removes the overlap lock of each task', () async {
+    CacheStore store = CacheStore(MemoryDriver());
+    // a crash left these
+    Duration hour = const Duration(hours: 1);
+    await store.lock('dox_schedule:overlap:cleanup', hour).get();
+    await store.lock('dox_schedule:overlap:ping', hour).get();
+    await store.put('keep', 1);
+    StringBuffer out = StringBuffer();
+    SchedulerRunner r = SchedulerRunner(
+      schedule: schedule,
+      clock: FakeClock(tick),
+      store: store,
+      out: out,
+    );
+    expect(await r.run(<String>['clear-cache']), 0);
+    expect(
+      out.toString(),
+      'Removed the overlap lock of cleanup.\n'
+      'Removed the overlap lock of ping.\n',
+    );
+    expect(await store.get('keep'), 1);
+    expect(ran, isEmpty);
+
+    out.clear();
+    expect(await r.run(<String>['clear-cache']), 0);
+    expect(out.toString(), 'No overlap locks found. Nothing to clear.\n');
   });
 
   test('unknown command prints usage', () async {

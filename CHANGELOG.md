@@ -1,5 +1,6 @@
 ## Unreleased
 
+- New `clear-cache` command: `dart run bin/schedule.dart clear-cache` (or `dox schedule:clear-cache`). A crash left the `withoutOverlapping()` lock in the store, so the task was skipped for up to 24 hours. The command removes the overlap lock of each task in the schedule, by its exact key. Other cache keys stay. It prints one line per removed lock, or `No overlap locks found. Nothing to clear.` Do not run it while a task really runs on another process: that task could then start twice. `Scheduler.clearOverlapLocks()` does the same in code.
 - Fix: `schedule list` did not show `between()`, `unlessBetween()` and `environments()`. So a task looked like it ran all day in every environment. Now the schedule column shows them, like `0 * * * *, between 09:00-17:00, env production`. The new `ScheduledTask.describeFilters()` gives this text.
 
 ## 3.1.0

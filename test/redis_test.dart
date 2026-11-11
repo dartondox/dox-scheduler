@@ -4,6 +4,7 @@ import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
 
+import 'clear_cache_cases.dart';
 import 'fake_clock.dart';
 
 /// Runs when REDIS_PORT is set (CI starts Redis). REDIS_HOST is optional.
@@ -85,5 +86,25 @@ void main() {
       expect(await b.runTask(task, tick), TaskOutcome.ran);
       expect(runs, 2);
     });
+  }, skip: port == null ? 'set REDIS_PORT to run the Redis tests' : null);
+
+  group('Redis clear-cache |', () {
+    List<CacheStore> opened = <CacheStore>[];
+
+    CacheStore open() {
+      CacheStore store = redis();
+      opened.add(store);
+      return store;
+    }
+
+    tearDown(() async {
+      await opened.first.flush();
+      for (CacheStore store in opened) {
+        await store.driver.close();
+      }
+      opened.clear();
+    });
+
+    clearCacheCases(open);
   }, skip: port == null ? 'set REDIS_PORT to run the Redis tests' : null);
 }
