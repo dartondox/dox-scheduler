@@ -138,13 +138,69 @@ class Scheduler {
   }) async {
     warnIfLockNotShared();
     DateTime minute = minuteOf(tick ?? clock.now());
+    return _runAt(minute, 0, waitForBackground);
+  }
+
+  /// Run the repeats of the sub-minute tasks (`everySecond()` and the
+  /// like) that are due at [minute], for the rest of that minute. It
+  /// sleeps between the steps and ends when the minute ends or at
+  /// [stop]. Call it after `runDue(tick: minute)`. A slow run skips the
+  /// steps it missed. With no due sub-minute task it ends at once.
+  /// Gives the outcome of each task: a failed run stays failed.
+  Future<Map<String, TaskOutcome>> runRepeats(
+    DateTime minute, {
+    bool waitForBackground = false,
+  }) async {
+    minute = minuteOf(minute);
+    Map<String, TaskOutcome> outcomes = <String, TaskOutcome>{};
+    int step = 60;
+    for (ScheduledTask task in tasks) {
+      int? seconds = task.repeatSeconds;
+      if (seconds != null && task.isDue(minute)) step = step.gcd(seconds);
+    }
+    if (step == 60) return outcomes;
+    int offset = 0;
+    while (!_stopping) {
+      int elapsed = clock.now().difference(minute).inMilliseconds;
+      // the next step after now (ceil), and never the same step again
+      int late = (elapsed + step * 1000 - 1) ~/ (step * 1000) * step;
+      offset = late > offset + step ? late : offset + step;
+      if (offset >= 60) break;
+      DateTime at = minute.add(Duration(seconds: offset));
+      await _wait(at.difference(clock.now()));
+      if (_stopping) break;
+      Map<String, TaskOutcome> ran = await _runAt(
+        at,
+        offset,
+        waitForBackground,
+      );
+      for (MapEntry<String, TaskOutcome> entry in ran.entries) {
+        if (outcomes[entry.key] != TaskOutcome.failed) {
+          outcomes[entry.key] = entry.value;
+        }
+      }
+    }
+    return outcomes;
+  }
+
+  /// Run the due tasks at [at]. At [offset] 0 (the minute start) every
+  /// due task runs. At a later second only the sub-minute tasks whose
+  /// step fits [offset] run.
+  Future<Map<String, TaskOutcome>> _runAt(
+    DateTime at,
+    int offset,
+    bool waitForBackground,
+  ) async {
+    DateTime minute = minuteOf(at);
     Map<String, TaskOutcome> outcomes = <String, TaskOutcome>{};
     Map<String, Future<TaskOutcome>> background =
         <String, Future<TaskOutcome>>{};
     for (ScheduledTask task in tasks) {
       if (_stopping) break;
+      int? seconds = task.repeatSeconds;
+      if (offset != 0 && (seconds == null || offset % seconds != 0)) continue;
       if (!task.isDue(minute)) continue;
-      Future<TaskOutcome> run = runTask(task, minute);
+      Future<TaskOutcome> run = runTask(task, at);
       if (task.background) {
         background[task.name] = run;
       } else {
@@ -160,14 +216,21 @@ class Scheduler {
   }
 
   /// Run [task] for the minute [tick]: filters, locks, hooks and the
-  /// work. With [force] (the `test` command) the filters and locks are
-  /// not checked.
+  /// work. For a sub-minute task [tick] is cut to its step, like
+  /// 02:00:05, so each repeat has its own once-per-tick lock. With
+  /// [force] (the `test` command) the filters and locks are not checked.
   Future<TaskOutcome> runTask(
     ScheduledTask task,
     DateTime tick, {
     bool force = false,
   }) {
-    Future<TaskOutcome> run = _run(task, minuteOf(tick), force);
+    int stepMs = (task.repeatSeconds ?? 60) * 1000;
+    int ms = tick.millisecondsSinceEpoch;
+    DateTime at = DateTime.fromMillisecondsSinceEpoch(
+      ms - ms % stepMs,
+      isUtc: true,
+    );
+    Future<TaskOutcome> run = _run(task, at, force);
     _running.add(run);
     return _forget(run);
   }
@@ -180,25 +243,30 @@ class Scheduler {
   }
 
   /// Run due tasks at every minute boundary until [stop]. The first
-  /// tick is the next full minute. After [stop] it waits for the
-  /// running tasks.
+  /// tick is the next full minute. Sub-minute tasks repeat inside the
+  /// minute (see [runRepeats]). After [stop] it waits for the running
+  /// tasks.
   Future<void> work() async {
     warnIfLockNotShared();
     while (!_stopping) {
       DateTime now = clock.now();
       DateTime next = minuteOf(now).add(const Duration(minutes: 1));
-      await Future.any(<Future<void>>[
-        _sleep(next.difference(now)),
-        _stopSignal.future,
-      ]);
-      _cancelSleepTimers();
+      await _wait(next.difference(now));
       if (_stopping) break;
       // after a long pause (sleeping laptop) run the minute of now
       DateTime late = minuteOf(clock.now());
-      await runDue(tick: late.isAfter(next) ? late : next);
+      DateTime tick = late.isAfter(next) ? late : next;
+      await runDue(tick: tick);
+      await runRepeats(tick);
     }
     await idle();
     await close();
+  }
+
+  /// Sleep for [duration], or until [stop].
+  Future<void> _wait(Duration duration) async {
+    await Future.any(<Future<void>>[_sleep(duration), _stopSignal.future]);
+    _cancelSleepTimers();
   }
 
   /// Free the overlap locks that timed-out runs still hold. Call it when
@@ -307,7 +375,12 @@ class Scheduler {
     Future<void>? ended;
     try {
       for (TaskCallback hook in task.beforeHooks) {
-        await hook();
+        try {
+          await hook();
+        } on PingException catch (error) {
+          // a failed ping never fails the task
+          _log('${task.name}: $error');
+        }
       }
       Future<void> work = Future<void>.sync(task.callback);
       workEnded = false;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dox_core/dox_core.dart' show Env;
 
@@ -15,6 +16,23 @@ typedef TaskFilter = FutureOr<bool> Function();
 /// A hook of `onFailure()`.
 typedef TaskErrorHook = FutureOr<void> Function(Object error, StackTrace stack);
 
+/// A hook of `onOutput()`. It gets the output of the process.
+typedef TaskOutputHook = FutureOr<void> Function(String output);
+
+/// A ping of `pingBefore()` and the like failed. The scheduler logs it.
+/// It never fails the task.
+class PingException implements Exception {
+  PingException(this.url, this.error);
+
+  final String url;
+  final Object error;
+
+  @override
+  String toString() {
+    return 'ping $url failed: $error';
+  }
+}
+
 /// One task of the schedule. Made by `Schedule.call()`.
 ///
 /// It runs every minute until you set a frequency:
@@ -23,6 +41,14 @@ typedef TaskErrorHook = FutureOr<void> Function(Object error, StackTrace stack);
 /// ```
 class ScheduledTask {
   ScheduledTask(this.name, this.callback);
+
+  /// Sends one ping: a GET request to the url. A status of 400 or more
+  /// throws. Replace it in tests.
+  static Future<void> Function(Uri url) sendPing = _httpGet;
+
+  /// Max time of one ping. After it the ping fails and its connection
+  /// is closed. Default: 10 seconds.
+  static Duration pingTimeout = ScheduleConstants.pingTimeout;
 
   /// Unique name. It is in the logs and the lock keys.
   final String name;
@@ -50,6 +76,10 @@ class ScheduledTask {
   /// Max run time of `timeout()`. Null: no limit.
   Duration? timeoutAfter;
 
+  /// Seconds between runs inside a due minute, set by `everySecond()` to
+  /// `everyThirtySeconds()`. Null: once a minute.
+  int? repeatSeconds;
+
   final List<TaskFilter> _when = <TaskFilter>[];
   final List<TaskFilter> _skip = <TaskFilter>[];
 
@@ -72,6 +102,15 @@ class ScheduledTask {
   final List<TaskCallback> successHooks = <TaskCallback>[];
   final List<TaskErrorHook> failureHooks = <TaskErrorHook>[];
 
+  /// The file of `sendOutputTo()` or `appendOutputTo()`. Null: none.
+  String? outputPath;
+
+  /// True after `appendOutputTo()`: add to the file, do not replace it.
+  bool appendOutput = false;
+
+  /// `onOutput()` hooks.
+  final List<TaskOutputHook> outputHooks = <TaskOutputHook>[];
+
   // ---------------------------------------------------------------------
   // Frequencies
   // ---------------------------------------------------------------------
@@ -84,6 +123,38 @@ class ScheduledTask {
     this.expression = parsed;
     _lastDayOnly = false;
     return this;
+  }
+
+  /// Every second. Like the other `every...Seconds()` methods, it sets
+  /// the cron to every minute. Then the task repeats inside each due
+  /// minute. Other frequencies, filters and `timezone()` still decide if
+  /// a minute is due.
+  ScheduledTask everySecond() {
+    return _repeatEvery(1);
+  }
+
+  ScheduledTask everyTwoSeconds() {
+    return _repeatEvery(2);
+  }
+
+  ScheduledTask everyFiveSeconds() {
+    return _repeatEvery(5);
+  }
+
+  ScheduledTask everyTenSeconds() {
+    return _repeatEvery(10);
+  }
+
+  ScheduledTask everyFifteenSeconds() {
+    return _repeatEvery(15);
+  }
+
+  ScheduledTask everyTwentySeconds() {
+    return _repeatEvery(20);
+  }
+
+  ScheduledTask everyThirtySeconds() {
+    return _repeatEvery(30);
   }
 
   ScheduledTask everyMinute() {
@@ -410,7 +481,10 @@ class ScheduledTask {
   }
 
   /// Count the run as failed when it takes longer than [duration].
-  /// Dart can not stop a running function, so the work may go on.
+  /// Dart can not stop a running function, so the work may go on. An
+  /// `exec()` or `command()` process is killed at that time. Its output
+  /// file and `onOutput()` hooks finish a bit later, after the failure
+  /// hooks ran. An error of the file or a hook is then lost.
   ScheduledTask timeout(Duration duration) {
     timeoutAfter = duration;
     return this;
@@ -442,6 +516,80 @@ class ScheduledTask {
   ScheduledTask onFailure(TaskErrorHook hook) {
     failureHooks.add(hook);
     return this;
+  }
+
+  /// Write the output (stdout and stderr) of an `exec()` or `command()`
+  /// task to the file at [path], as it comes. It replaces the file each
+  /// run. Two runs at the same time write to the same file, so use
+  /// `withoutOverlapping()` or `appendOutputTo()`. A file that can not
+  /// be written fails the task. A callback task has no output, so this
+  /// does nothing there.
+  ScheduledTask sendOutputTo(String path) {
+    outputPath = path;
+    appendOutput = false;
+    return this;
+  }
+
+  /// Like `sendOutputTo()`, but adds the output to the end of the file.
+  ScheduledTask appendOutputTo(String path) {
+    outputPath = path;
+    appendOutput = true;
+    return this;
+  }
+
+  /// Call [hook] with the output (stdout and stderr) of an `exec()` or
+  /// `command()` task, after the process ends and before the success or
+  /// failure hooks. The whole output is then held in memory. The hook
+  /// gets it even when the output file could not be written. A throwing
+  /// hook fails the task. A callback task has no output, so the hook is
+  /// never called there.
+  ScheduledTask onOutput(TaskOutputHook hook) {
+    outputHooks.add(hook);
+    return this;
+  }
+
+  /// Send a GET request to [url] before the task runs. A failed ping is
+  /// logged and never fails the task (for every ping method). A ping
+  /// fails after [pingTimeout]. A url that is not http or https throws
+  /// an [ArgumentError] here, when the schedule is made.
+  ScheduledTask pingBefore(String url) {
+    return before(_ping(url));
+  }
+
+  /// `pingBefore(url)` when [value] is true.
+  ScheduledTask pingBeforeIf(bool value, String url) {
+    return value ? pingBefore(url) : this;
+  }
+
+  /// Send a GET request to [url] after the task, also when it failed.
+  ScheduledTask thenPing(String url) {
+    return after(_ping(url));
+  }
+
+  /// `thenPing(url)` when [value] is true.
+  ScheduledTask thenPingIf(bool value, String url) {
+    return value ? thenPing(url) : this;
+  }
+
+  /// Send a GET request to [url] after the task when it worked.
+  ScheduledTask pingOnSuccess(String url) {
+    return onSuccess(_ping(url));
+  }
+
+  /// `pingOnSuccess(url)` when [value] is true.
+  ScheduledTask pingOnSuccessIf(bool value, String url) {
+    return value ? pingOnSuccess(url) : this;
+  }
+
+  /// Send a GET request to [url] when the task failed.
+  ScheduledTask pingOnFailure(String url) {
+    TaskCallback ping = _ping(url);
+    return onFailure((Object error, StackTrace stack) => ping());
+  }
+
+  /// `pingOnFailure(url)` when [value] is true.
+  ScheduledTask pingOnFailureIf(bool value, String url) {
+    return value ? pingOnFailure(url) : this;
   }
 
   // ---------------------------------------------------------------------
@@ -513,6 +661,7 @@ class ScheduledTask {
   /// task has none. `when()` and `skip()` are code, so they are not in it.
   String describeFilters() {
     return <String>[
+      if (repeatSeconds case int seconds) 'every ${seconds}s',
       for (List<int> window in _between) 'between ${_windowText(window)}',
       for (List<int> window in _unlessBetween)
         'unless between ${_windowText(window)}',
@@ -557,6 +706,50 @@ class ScheduledTask {
     List<int> from = _time(start);
     List<int> to = _time(end);
     return <int>[from[0] * 60 + from[1], to[0] * 60 + to[1]];
+  }
+
+  /// a hook that pings [url]. Errors become a [PingException], so the
+  /// scheduler can log them and go on. A url that is not http or https
+  /// with a host throws now, when the schedule is made.
+  TaskCallback _ping(String url) {
+    Uri? uri = Uri.tryParse(url);
+    if (uri == null ||
+        !uri.isScheme('http') && !uri.isScheme('https') ||
+        uri.host.isEmpty) {
+      throw ArgumentError.value(url, 'url', 'Must be an http or https url');
+    }
+    return () async {
+      try {
+        // also here, for a custom sendPing
+        await sendPing(uri).timeout(pingTimeout);
+      } catch (error) {
+        throw PingException(url, error);
+      }
+    };
+  }
+
+  static Future<void> _httpGet(Uri url) async {
+    HttpClient client = HttpClient()..connectionTimeout = pingTimeout;
+    try {
+      await _get(client, url).timeout(pingTimeout);
+    } finally {
+      // also closes a request that hangs past the limit
+      client.close(force: true);
+    }
+  }
+
+  static Future<void> _get(HttpClient client, Uri url) async {
+    HttpClientResponse response = await (await client.getUrl(url)).close();
+    await response.drain<void>();
+    if (response.statusCode >= 400) {
+      throw HttpException('status ${response.statusCode}', uri: url);
+    }
+  }
+
+  /// like Laravel: every minute, and [seconds] between runs
+  ScheduledTask _repeatEvery(int seconds) {
+    repeatSeconds = seconds;
+    return everyMinute();
   }
 
   ScheduledTask _everyHours(String hours, int minute) {

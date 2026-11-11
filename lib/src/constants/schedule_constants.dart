@@ -12,6 +12,9 @@ class ScheduleConstants {
   /// can not hold it longer than this.
   static const Duration overlapLockTtl = Duration(hours: 24);
 
+  /// Max time of one ping of `pingBefore()` and the like.
+  static const Duration pingTimeout = Duration(seconds: 10);
+
   /// Exit code for a wrong command line.
   static const int usageExitCode = 64;
 
