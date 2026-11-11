@@ -482,7 +482,9 @@ class ScheduledTask {
 
   /// Count the run as failed when it takes longer than [duration].
   /// Dart can not stop a running function, so the work may go on. An
-  /// `exec()` or `command()` process is killed at that time.
+  /// `exec()` or `command()` process is killed at that time. Its output
+  /// file and `onOutput()` hooks finish a bit later, after the failure
+  /// hooks ran. An error of the file or a hook is then lost.
   ScheduledTask timeout(Duration duration) {
     timeoutAfter = duration;
     return this;

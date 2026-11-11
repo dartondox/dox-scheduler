@@ -790,6 +790,87 @@ void main() {
       expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
     });
 
+    test('stdin is closed, so cat ends at once', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s.exec('cat');
+      expect(
+        await make(s).runTask(task, tick).timeout(const Duration(seconds: 5)),
+        TaskOutcome.ran,
+      );
+    });
+
+    group('kill |', () {
+      setUp(() => Schedule.processGrace = const Duration(milliseconds: 200));
+      tearDown(() => Schedule.processGrace = const Duration(seconds: 5));
+
+      /// [script] runs in sh with a 100 ms timeout. Gives when the
+      /// process function really ended (its onOutput hook ran).
+      Future<Duration> killed(String script) async {
+        Completer<void> ended = Completer<void>();
+        Schedule s = Schedule();
+        ScheduledTask task = s
+            .exec('sh', args: <String>['-c', script])
+            .timeout(const Duration(milliseconds: 100))
+            .onOutput((String o) => ended.complete());
+        Stopwatch watch = Stopwatch()..start();
+        expect(await make(s).runTask(task, tick), TaskOutcome.failed);
+        await ended.future.timeout(const Duration(seconds: 5));
+        return watch.elapsed;
+      }
+
+      test('a shell child that holds the pipes does not block', () async {
+        Duration took = await killed('sleep 10 | cat');
+        expect(took, lessThan(const Duration(seconds: 3)));
+      });
+
+      test('a process that ignores SIGTERM gets SIGKILL', () async {
+        Duration took = await killed("trap '' TERM; sleep 10");
+        expect(took, lessThan(const Duration(seconds: 3)));
+      });
+    });
+
+    test('a non-zero exit code beats a hook and a file error', () async {
+      Object? error;
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('sh', args: <String>['-c', 'echo hi; exit 4'])
+          .sendOutputTo('/no/such/dir/out.log')
+          .onOutput((String o) => throw StateError('hook'))
+          .onFailure((Object e, StackTrace st) => error = e);
+      expect(await make(s).runTask(task, tick), TaskOutcome.failed);
+      expect(error, isA<ProcessException>());
+      expect((error as ProcessException).errorCode, 4);
+    });
+
+    test('a large output (1 MB) does not block', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      String path = '${dir.path}/out.log';
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('head', args: <String>['-c', '1048576', '/dev/zero'])
+          .sendOutputTo(path);
+      expect(
+        await make(s).runTask(task, tick).timeout(const Duration(seconds: 10)),
+        TaskOutcome.ran,
+      );
+      expect(await File(path).length(), 1048576);
+    });
+
+    test('UTF-8 text split across chunks comes out right', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      String text = 'é' * 200000;
+      File input = File('${dir.path}/in.txt')..writeAsStringSync(text);
+      List<String> seen = <String>[];
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('cat', args: <String>[input.path])
+          .onOutput(seen.add);
+      expect(await make(s).runTask(task, tick), TaskOutcome.ran);
+      expect(seen.single, text);
+    });
+
     test('command runs the dox executable', () async {
       addTearDown(() => Schedule.doxExecutable = 'dox');
       Schedule.doxExecutable = 'echo';

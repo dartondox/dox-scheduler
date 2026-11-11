@@ -56,7 +56,9 @@ s.command('queue:prune', args: <String>['--hours=48']).hourly();
 `exec(executable, args: [...])` runs a process. No shell is used, so `|`, `>` and `*` are plain text.
 Use `s.exec('sh', args: <String>['-c', '...'])` when you need a shell.
 A non-zero exit code fails the task.
-With `timeout()`, the process is killed when the time is up.
+Its stdin is closed, so a program that waits for input ends at once.
+With `timeout()`, the process gets SIGTERM when the time is up, and SIGKILL 5 seconds later (`Schedule.processGrace`).
+Only the process itself is killed. The children of a shell (`sh -c 'a | b'`) may live on.
 A stop of `work` waits for the process to end.
 
 `command(name, args: [...])` runs a `dox` command of your app, as the process `dox <name> <args>`.
@@ -281,6 +283,8 @@ These work on `exec()` and `command()` tasks. On a function task they do nothing
 - Two runs at the same time write to the same file. Use `withoutOverlapping()` or `appendOutputTo()`.
 - A file that can not be written fails the task. `onOutput` still gets the output first.
 - A throwing `onOutput` hook fails the task.
+- When more than one thing fails, the task fails with the first of: a non-zero exit code, an `onOutput` error, a file error.
+- After a timeout, the file and `onOutput` finish a bit later, after the failure hooks ran. An error there is lost.
 
 ### Ping hooks
 

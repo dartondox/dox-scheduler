@@ -25,6 +25,12 @@ class Schedule {
   /// a full path when the scheduler runs where `dox` is not on PATH.
   static String doxExecutable = 'dox';
 
+  /// After `timeout()` sends SIGTERM to a process, it gets this long to
+  /// end, then it gets SIGKILL. After a process ends, its output pipes
+  /// get this long to close too. A child of a shell can keep them open;
+  /// then the rest of the output is dropped. Default: 5 seconds.
+  static Duration processGrace = const Duration(seconds: 5);
+
   final List<ScheduledTask> _tasks = <ScheduledTask>[];
 
   /// The tasks, in the order they were added.
@@ -51,8 +57,11 @@ class Schedule {
   /// Add a task that runs [executable] with [args] as a process. No
   /// shell is used, so `|`, `>` and `*` are plain text. Use
   /// `exec('sh', args: ['-c', '...'])` when you need a shell. A non-zero
-  /// exit code fails the task. With `timeout()` the process is killed
-  /// when the time is up. A stop of `work` waits for the process.
+  /// exit code fails the task. Its stdin is closed at start, so a
+  /// program that waits for input ends. With `timeout()` the process is
+  /// killed when the time is up (SIGTERM, then SIGKILL after
+  /// [processGrace]). Only the process itself is killed: the children of
+  /// a shell may live on. A stop of `work` waits for the process.
   ///
   /// The task [name] is the command line by default, like
   /// `php artisan inspire`. It shows in the logs, the lock keys and
@@ -98,63 +107,109 @@ class Schedule {
 /// Run the process of [task]. Its output (stdout and stderr, as they
 /// come) goes to the output file as it comes. It is held in memory only
 /// when the task has `onOutput()` hooks. `timeout()` kills the process.
-/// A non-zero exit code, or a failed file write, throws after the hooks.
+/// Errors, first one wins: a non-zero exit code, an `onOutput()` hook,
+/// the file write. They are thrown after the hooks ran.
 Future<void> _runProcess(
   ScheduledTask task,
   String executable,
   List<String> args,
 ) async {
   Process process = await Process.start(executable, args);
+  // a program that reads stdin must not wait forever
+  process.stdin.close().ignore();
+  Duration grace = Schedule.processGrace;
   Duration? limit = task.timeoutAfter;
-  Timer? killer = limit == null ? null : Timer(limit, process.kill);
+  Timer? hardKill;
+  Timer? killer = limit == null
+      ? null
+      : Timer(limit, () {
+          process.kill();
+          hardKill = Timer(grace, () => process.kill(ProcessSignal.sigkill));
+        });
   BytesBuilder? text = task.outputHooks.isEmpty ? null : BytesBuilder();
   RandomAccessFile? file;
   Object? fileError;
-  String? path = task.outputPath;
-  if (path != null) {
-    try {
-      FileMode mode = task.appendOutput ? FileMode.append : FileMode.write;
-      file = await File(path).open(mode: mode);
-    } catch (error) {
-      fileError = error;
-    }
-  }
   // one chain, so the writes keep their order
   Future<void> writes = Future<void>.value();
-  void onChunk(List<int> chunk) {
-    text?.add(chunk);
-    RandomAccessFile? out = file;
-    if (out == null) return;
-    writes = writes.then((_) async {
-      if (fileError != null) return;
+  List<StreamSubscription<List<int>>> pipes = <StreamSubscription<List<int>>>[];
+  try {
+    String? path = task.outputPath;
+    if (path != null) {
       try {
-        await out.writeFrom(chunk);
+        FileMode mode = task.appendOutput ? FileMode.append : FileMode.write;
+        file = await File(path).open(mode: mode);
       } catch (error) {
         fileError = error;
       }
-    });
-  }
-
-  await Future.wait(<Future<void>>[
-    process.stdout.forEach(onChunk),
-    process.stderr.forEach(onChunk),
-  ]);
-  int code = await process.exitCode;
-  killer?.cancel();
-  await writes;
-  try {
-    await file?.close();
-  } catch (error) {
-    fileError ??= error;
-  }
-  if (text != null) {
-    String output = systemEncoding.decode(text.takeBytes());
-    for (TaskOutputHook hook in task.outputHooks) {
-      await hook(output);
     }
-  }
-  if (code != 0) {
-    throw ProcessException(executable, args, 'Exit code $code', code);
+    void onChunk(List<int> chunk) {
+      text?.add(chunk);
+      RandomAccessFile? out = file;
+      if (out == null) return;
+      writes = writes.then((_) async {
+        if (fileError != null) return;
+        try {
+          await out.writeFrom(chunk);
+        } catch (error) {
+          fileError = error;
+        }
+      });
+    }
+
+    List<Future<void>> ended = <Future<void>>[];
+    for (Stream<List<int>> stream in <Stream<List<int>>>[
+      process.stdout,
+      process.stderr,
+    ]) {
+      Completer<void> end = Completer<void>();
+      pipes.add(
+        stream.listen(
+          onChunk,
+          onDone: end.complete,
+          onError: end.completeError,
+          cancelOnError: true,
+        ),
+      );
+      ended.add(end.future);
+    }
+    int code = await process.exitCode;
+    killer?.cancel();
+    hardKill?.cancel();
+    try {
+      await Future.wait(ended).timeout(grace);
+    } on TimeoutException {
+      // ponytail: a shell child still holds the pipes; drop the rest
+    }
+    await writes;
+    Object? hookError;
+    StackTrace? hookStack;
+    if (text != null) {
+      String output = systemEncoding.decode(text.takeBytes());
+      for (TaskOutputHook hook in task.outputHooks) {
+        try {
+          await hook(output);
+        } catch (error, stack) {
+          hookError ??= error;
+          hookStack ??= stack;
+        }
+      }
+    }
+    if (code != 0) {
+      throw ProcessException(executable, args, 'Exit code $code', code);
+    }
+    if (hookError != null) Error.throwWithStackTrace(hookError, hookStack!);
+  } finally {
+    killer?.cancel();
+    hardKill?.cancel();
+    for (StreamSubscription<List<int>> pipe in pipes) {
+      await pipe.cancel();
+    }
+    try {
+      await writes;
+      await file?.close();
+    } catch (error) {
+      fileError ??= error;
+    }
   }
   if (fileError case Object error) throw error;
 }
