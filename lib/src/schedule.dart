@@ -56,10 +56,12 @@ class Schedule {
     List<String> args = const <String>[],
   ]) {
     List<String> argList = List<String>.of(args);
-    return call(
+    late ScheduledTask task;
+    task = call(
       <String>[executable, ...argList].join(' '),
-      () => _runProcess(executable, argList),
+      () => _runProcess(task, executable, argList),
     );
+    return task;
   }
 
   /// Add a task that runs a `dox` command of the app, like
@@ -82,9 +84,24 @@ class Schedule {
   }
 }
 
-/// run the process; a non-zero exit code throws
-Future<void> _runProcess(String executable, List<String> args) async {
+/// run the process and hand its output to the output hooks of [task].
+/// A non-zero exit code throws.
+Future<void> _runProcess(
+  ScheduledTask task,
+  String executable,
+  List<String> args,
+) async {
   ProcessResult result = await Process.run(executable, args);
+  // ponytail: stdout then stderr, not mixed in time like `2>&1`
+  String output = '${result.stdout}${result.stderr}';
+  String? path = task.outputPath;
+  if (path != null) {
+    FileMode mode = task.appendOutput ? FileMode.append : FileMode.write;
+    await File(path).writeAsString(output, mode: mode);
+  }
+  for (TaskOutputHook hook in task.outputHooks) {
+    await hook(output);
+  }
   if (result.exitCode != 0) {
     throw ProcessException(
       executable,

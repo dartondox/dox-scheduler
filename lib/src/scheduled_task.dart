@@ -15,6 +15,9 @@ typedef TaskFilter = FutureOr<bool> Function();
 /// A hook of `onFailure()`.
 typedef TaskErrorHook = FutureOr<void> Function(Object error, StackTrace stack);
 
+/// A hook of `onOutput()`. It gets the output of the process.
+typedef TaskOutputHook = FutureOr<void> Function(String output);
+
 /// One task of the schedule. Made by `Schedule.call()`.
 ///
 /// It runs every minute until you set a frequency:
@@ -75,6 +78,15 @@ class ScheduledTask {
   final List<TaskCallback> afterHooks = <TaskCallback>[];
   final List<TaskCallback> successHooks = <TaskCallback>[];
   final List<TaskErrorHook> failureHooks = <TaskErrorHook>[];
+
+  /// The file of `sendOutputTo()` or `appendOutputTo()`. Null: none.
+  String? outputPath;
+
+  /// True after `appendOutputTo()`: add to the file, do not replace it.
+  bool appendOutput = false;
+
+  /// `onOutput()` hooks.
+  final List<TaskOutputHook> outputHooks = <TaskOutputHook>[];
 
   // ---------------------------------------------------------------------
   // Frequencies
@@ -477,6 +489,31 @@ class ScheduledTask {
   /// Runs when the task (or a `before` hook) throws or times out.
   ScheduledTask onFailure(TaskErrorHook hook) {
     failureHooks.add(hook);
+    return this;
+  }
+
+  /// Write the output (stdout, then stderr) of an `exec()` or
+  /// `command()` task to the file at [path]. It replaces the file each
+  /// run. A callback task has no output, so this does nothing there.
+  ScheduledTask sendOutputTo(String path) {
+    outputPath = path;
+    appendOutput = false;
+    return this;
+  }
+
+  /// Like `sendOutputTo()`, but adds the output to the end of the file.
+  ScheduledTask appendOutputTo(String path) {
+    outputPath = path;
+    appendOutput = true;
+    return this;
+  }
+
+  /// Call [hook] with the output (stdout, then stderr) of an `exec()` or
+  /// `command()` task, after the process ends and before the success or
+  /// failure hooks. A throwing hook fails the task. A callback task has
+  /// no output, so the hook is never called there.
+  ScheduledTask onOutput(TaskOutputHook hook) {
+    outputHooks.add(hook);
     return this;
   }
 

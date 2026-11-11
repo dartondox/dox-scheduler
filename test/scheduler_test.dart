@@ -642,6 +642,54 @@ void main() {
       expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.failed);
     });
 
+    test('sendOutputTo replaces, appendOutputTo adds', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      String path = '${dir.path}/out.log';
+      List<String> seen = <String>[];
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('sh', <String>['-c', 'echo hi; echo oops >&2'])
+          .sendOutputTo(path)
+          .onOutput(seen.add)
+          .onEveryServer();
+      Scheduler scheduler = make(s);
+      await scheduler.runTask(task, tick);
+      await scheduler.runTask(task, tick);
+      expect(await File(path).readAsString(), 'hi\noops\n');
+      expect(seen, <String>['hi\noops\n', 'hi\noops\n']);
+      task.appendOutputTo(path);
+      await scheduler.runTask(task, tick);
+      expect(await File(path).readAsString(), 'hi\noops\nhi\noops\n');
+    });
+
+    test('output is written for a failed process too', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      String path = '${dir.path}/out.log';
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('sh', <String>['-c', 'echo bad; exit 1'])
+          .appendOutputTo(path);
+      expect(await make(s).runTask(task, tick), TaskOutcome.failed);
+      expect(await File(path).readAsString(), 'bad\n');
+    });
+
+    test('output hooks do nothing on a callback task', () async {
+      Directory dir = await Directory.systemTemp.createTemp('dox_schedule');
+      addTearDown(() => dir.delete(recursive: true));
+      String path = '${dir.path}/out.log';
+      bool called = false;
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .call('a', () {})
+          .sendOutputTo(path)
+          .onOutput((String o) => called = true);
+      expect(await make(s).runTask(task, tick), TaskOutcome.ran);
+      expect(called, isFalse);
+      expect(File(path).existsSync(), isFalse);
+    });
+
     test('command runs the dox executable', () async {
       addTearDown(() => Schedule.doxExecutable = 'dox');
       Schedule.doxExecutable = 'echo';
