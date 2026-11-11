@@ -375,7 +375,12 @@ class Scheduler {
     Future<void>? ended;
     try {
       for (TaskCallback hook in task.beforeHooks) {
-        await hook();
+        try {
+          await hook();
+        } on PingException catch (error) {
+          // a failed ping never fails the task
+          _log('${task.name}: $error');
+        }
       }
       Future<void> work = Future<void>.sync(task.callback);
       workEnded = false;

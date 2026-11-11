@@ -700,6 +700,105 @@ void main() {
     });
   });
 
+  group('ping |', () {
+    // the real ping, kept before a test replaces it
+    Future<void> Function(Uri url) defaultPing = ScheduledTask.sendPing;
+    List<String> log = <String>[];
+    setUp(() {
+      log.clear();
+      ScheduledTask.sendPing = (Uri url) async {
+        log.add('ping ${url.path}');
+        if (url.path == '/down') throw const SocketException('refused');
+      };
+    });
+    tearDown(() {
+      ScheduledTask.sendPing = defaultPing;
+    });
+
+    test('order on success', () async {
+      Schedule s = Schedule();
+      s
+          .call('a', () => log.add('run'))
+          .pingBefore('http://x/before')
+          .pingOnSuccess('http://x/success')
+          .pingOnFailure('http://x/failure')
+          .thenPing('http://x/after');
+      await make(s).runDue(tick: tick);
+      expect(log, <String>[
+        'ping /before',
+        'run',
+        'ping /success',
+        'ping /after',
+      ]);
+    });
+
+    test('order on failure', () async {
+      Schedule s = Schedule();
+      s
+          .call('a', () => throw StateError('boom'))
+          .pingOnSuccess('http://x/success')
+          .pingOnFailure('http://x/failure')
+          .thenPing('http://x/after');
+      await make(s).runDue(tick: tick);
+      expect(log, <String>['ping /failure', 'ping /after']);
+    });
+
+    test('a failed ping is logged and does not fail the task', () async {
+      StringBuffer out = StringBuffer();
+      Schedule s = Schedule();
+      s
+          .call('a', () => log.add('run'))
+          .pingBefore('http://x/down')
+          .pingOnSuccess('http://x/down')
+          .thenPing('http://x/down');
+      Scheduler scheduler = Scheduler(
+        tasks: s.tasks,
+        store: CacheStore(MemoryDriver()),
+        clock: FakeClock(tick),
+        out: out,
+        err: StringBuffer(),
+      );
+      expect((await scheduler.runDue(tick: tick))['a'], TaskOutcome.ran);
+      expect(log, contains('run'));
+      expect('ping http://x/down failed'.allMatches(out.toString()).length, 3);
+    });
+
+    test('the If forms', () async {
+      Schedule s = Schedule();
+      s
+          .call('a', () {})
+          .pingBeforeIf(false, 'http://x/no')
+          .pingBeforeIf(true, 'http://x/before')
+          .thenPingIf(false, 'http://x/no')
+          .thenPingIf(true, 'http://x/after')
+          .pingOnSuccessIf(false, 'http://x/no')
+          .pingOnSuccessIf(true, 'http://x/success')
+          .pingOnFailureIf(true, 'http://x/failure');
+      await make(s).runDue(tick: tick);
+      expect(log, <String>['ping /before', 'ping /success', 'ping /after']);
+    });
+
+    test('the default ping sends a GET', () async {
+      HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      server.listen((HttpRequest request) {
+        log.add('${request.method} ${request.uri.path}');
+        request.response.statusCode = request.uri.path == '/bad' ? 500 : 200;
+        request.response.close();
+      });
+      String base = 'http://127.0.0.1:${server.port}';
+      await defaultPing(Uri.parse('$base/ok'));
+      await expectLater(
+        defaultPing(Uri.parse('$base/bad')),
+        throwsA(isA<HttpException>()),
+      );
+      expect(log, <String>['GET /ok', 'GET /bad']);
+    });
+  });
+
   test('Schedule rejects duplicate and empty names', () {
     Schedule s = Schedule();
     s.call('a', () {});

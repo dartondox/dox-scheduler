@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dox_core/dox_core.dart' show Env;
 
@@ -18,6 +19,20 @@ typedef TaskErrorHook = FutureOr<void> Function(Object error, StackTrace stack);
 /// A hook of `onOutput()`. It gets the output of the process.
 typedef TaskOutputHook = FutureOr<void> Function(String output);
 
+/// A ping of `pingBefore()` and the like failed. The scheduler logs it.
+/// It never fails the task.
+class PingException implements Exception {
+  PingException(this.url, this.error);
+
+  final String url;
+  final Object error;
+
+  @override
+  String toString() {
+    return 'ping $url failed: $error';
+  }
+}
+
 /// One task of the schedule. Made by `Schedule.call()`.
 ///
 /// It runs every minute until you set a frequency:
@@ -26,6 +41,10 @@ typedef TaskOutputHook = FutureOr<void> Function(String output);
 /// ```
 class ScheduledTask {
   ScheduledTask(this.name, this.callback);
+
+  /// Sends one ping: a GET request to the url. A status of 400 or more
+  /// throws. Replace it in tests.
+  static Future<void> Function(Uri url) sendPing = _httpGet;
 
   /// Unique name. It is in the logs and the lock keys.
   final String name;
@@ -517,6 +536,48 @@ class ScheduledTask {
     return this;
   }
 
+  /// Send a GET request to [url] before the task runs. A failed ping is
+  /// logged and never fails the task (for every ping method).
+  ScheduledTask pingBefore(String url) {
+    return before(_ping(url));
+  }
+
+  /// `pingBefore(url)` when [value] is true.
+  ScheduledTask pingBeforeIf(bool value, String url) {
+    return value ? pingBefore(url) : this;
+  }
+
+  /// Send a GET request to [url] after the task, also when it failed.
+  ScheduledTask thenPing(String url) {
+    return after(_ping(url));
+  }
+
+  /// `thenPing(url)` when [value] is true.
+  ScheduledTask thenPingIf(bool value, String url) {
+    return value ? thenPing(url) : this;
+  }
+
+  /// Send a GET request to [url] after the task when it worked.
+  ScheduledTask pingOnSuccess(String url) {
+    return onSuccess(_ping(url));
+  }
+
+  /// `pingOnSuccess(url)` when [value] is true.
+  ScheduledTask pingOnSuccessIf(bool value, String url) {
+    return value ? pingOnSuccess(url) : this;
+  }
+
+  /// Send a GET request to [url] when the task failed.
+  ScheduledTask pingOnFailure(String url) {
+    TaskCallback ping = _ping(url);
+    return onFailure((Object error, StackTrace stack) => ping());
+  }
+
+  /// `pingOnFailure(url)` when [value] is true.
+  ScheduledTask pingOnFailureIf(bool value, String url) {
+    return value ? pingOnFailure(url) : this;
+  }
+
   // ---------------------------------------------------------------------
   // Checks
   // ---------------------------------------------------------------------
@@ -631,6 +692,33 @@ class ScheduledTask {
     List<int> from = _time(start);
     List<int> to = _time(end);
     return <int>[from[0] * 60 + from[1], to[0] * 60 + to[1]];
+  }
+
+  /// a hook that pings [url]. Errors become a [PingException], so the
+  /// scheduler can log them and go on. A bad url throws now.
+  TaskCallback _ping(String url) {
+    Uri uri = Uri.parse(url);
+    return () async {
+      try {
+        await sendPing(uri).timeout(ScheduleConstants.pingTimeout);
+      } catch (error) {
+        throw PingException(url, error);
+      }
+    };
+  }
+
+  static Future<void> _httpGet(Uri url) async {
+    HttpClient client = HttpClient()
+      ..connectionTimeout = ScheduleConstants.pingTimeout;
+    try {
+      HttpClientResponse response = await (await client.getUrl(url)).close();
+      await response.drain<void>();
+      if (response.statusCode >= 400) {
+        throw HttpException('status ${response.statusCode}', uri: url);
+      }
+    } finally {
+      client.close(force: true);
+    }
   }
 
   /// like Laravel: every minute, and [seconds] between runs
