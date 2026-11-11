@@ -785,9 +785,11 @@ void main() {
       // the process is gone, so its work ends and frees the overlap lock
       await scheduler.idle();
       while (await scheduler.runTask(task, tick) == TaskOutcome.skipped) {
+        if (watch.elapsed > const Duration(seconds: 10)) {
+          fail('the overlap lock was not freed in 10 s: not killed');
+        }
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
     });
 
     test('stdin is closed, so cat ends at once', () async {

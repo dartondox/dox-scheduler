@@ -142,11 +142,13 @@ Future<void> _runProcess(
         fileError = error;
       }
     }
-    void onChunk(List<int> chunk) {
+
+    /// Gives the pending write, or null when there is no file.
+    Future<void>? onChunk(List<int> chunk) {
       text?.add(chunk);
       RandomAccessFile? out = file;
-      if (out == null) return;
-      writes = writes.then((_) async {
+      if (out == null) return null;
+      return writes = writes.then((_) async {
         if (fileError != null) return;
         try {
           await out.writeFrom(chunk);
@@ -162,14 +164,20 @@ Future<void> _runProcess(
       process.stderr,
     ]) {
       Completer<void> end = Completer<void>();
-      pipes.add(
-        stream.listen(
-          onChunk,
-          onDone: end.complete,
-          onError: end.completeError,
-          cancelOnError: true,
-        ),
+      late StreamSubscription<List<int>> pipe;
+      pipe = stream.listen(
+        (List<int> chunk) {
+          // wait for the disk, so a fast process does not fill the memory
+          Future<void>? write = onChunk(chunk);
+          if (write != null) pipe.pause(write);
+        },
+        onDone: end.complete,
+        onError: end.completeError,
+        cancelOnError: true,
       );
+      pipes.add(pipe);
+      // an error before the wait below must not be an uncaught error
+      end.future.ignore();
       ended.add(end.future);
     }
     int code = await process.exitCode;
@@ -179,6 +187,9 @@ Future<void> _runProcess(
       await Future.wait(ended).timeout(grace);
     } on TimeoutException {
       // ponytail: a shell child still holds the pipes; drop the rest
+      for (StreamSubscription<List<int>> pipe in pipes) {
+        await pipe.cancel();
+      }
     }
     await writes;
     Object? hookError;
