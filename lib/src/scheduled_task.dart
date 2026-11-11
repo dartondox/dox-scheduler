@@ -46,6 +46,10 @@ class ScheduledTask {
   /// throws. Replace it in tests.
   static Future<void> Function(Uri url) sendPing = _httpGet;
 
+  /// Max time of one ping. After it the ping fails and its connection
+  /// is closed. Default: 10 seconds.
+  static Duration pingTimeout = ScheduleConstants.pingTimeout;
+
   /// Unique name. It is in the logs and the lock keys.
   final String name;
 
@@ -477,7 +481,8 @@ class ScheduledTask {
   }
 
   /// Count the run as failed when it takes longer than [duration].
-  /// Dart can not stop a running function, so the work may go on.
+  /// Dart can not stop a running function, so the work may go on. An
+  /// `exec()` or `command()` process is killed at that time.
   ScheduledTask timeout(Duration duration) {
     timeoutAfter = duration;
     return this;
@@ -511,9 +516,12 @@ class ScheduledTask {
     return this;
   }
 
-  /// Write the output (stdout, then stderr) of an `exec()` or
-  /// `command()` task to the file at [path]. It replaces the file each
-  /// run. A callback task has no output, so this does nothing there.
+  /// Write the output (stdout and stderr) of an `exec()` or `command()`
+  /// task to the file at [path], as it comes. It replaces the file each
+  /// run. Two runs at the same time write to the same file, so use
+  /// `withoutOverlapping()` or `appendOutputTo()`. A file that can not
+  /// be written fails the task. A callback task has no output, so this
+  /// does nothing there.
   ScheduledTask sendOutputTo(String path) {
     outputPath = path;
     appendOutput = false;
@@ -527,17 +535,21 @@ class ScheduledTask {
     return this;
   }
 
-  /// Call [hook] with the output (stdout, then stderr) of an `exec()` or
+  /// Call [hook] with the output (stdout and stderr) of an `exec()` or
   /// `command()` task, after the process ends and before the success or
-  /// failure hooks. A throwing hook fails the task. A callback task has
-  /// no output, so the hook is never called there.
+  /// failure hooks. The whole output is then held in memory. The hook
+  /// gets it even when the output file could not be written. A throwing
+  /// hook fails the task. A callback task has no output, so the hook is
+  /// never called there.
   ScheduledTask onOutput(TaskOutputHook hook) {
     outputHooks.add(hook);
     return this;
   }
 
   /// Send a GET request to [url] before the task runs. A failed ping is
-  /// logged and never fails the task (for every ping method).
+  /// logged and never fails the task (for every ping method). A ping
+  /// fails after [pingTimeout]. A url that is not http or https throws
+  /// an [ArgumentError] here, when the schedule is made.
   ScheduledTask pingBefore(String url) {
     return before(_ping(url));
   }
@@ -695,12 +707,19 @@ class ScheduledTask {
   }
 
   /// a hook that pings [url]. Errors become a [PingException], so the
-  /// scheduler can log them and go on. A bad url throws now.
+  /// scheduler can log them and go on. A url that is not http or https
+  /// with a host throws now, when the schedule is made.
   TaskCallback _ping(String url) {
-    Uri uri = Uri.parse(url);
+    Uri? uri = Uri.tryParse(url);
+    if (uri == null ||
+        !uri.isScheme('http') && !uri.isScheme('https') ||
+        uri.host.isEmpty) {
+      throw ArgumentError.value(url, 'url', 'Must be an http or https url');
+    }
     return () async {
       try {
-        await sendPing(uri).timeout(ScheduleConstants.pingTimeout);
+        // also here, for a custom sendPing
+        await sendPing(uri).timeout(pingTimeout);
       } catch (error) {
         throw PingException(url, error);
       }
@@ -708,16 +727,20 @@ class ScheduledTask {
   }
 
   static Future<void> _httpGet(Uri url) async {
-    HttpClient client = HttpClient()
-      ..connectionTimeout = ScheduleConstants.pingTimeout;
+    HttpClient client = HttpClient()..connectionTimeout = pingTimeout;
     try {
-      HttpClientResponse response = await (await client.getUrl(url)).close();
-      await response.drain<void>();
-      if (response.statusCode >= 400) {
-        throw HttpException('status ${response.statusCode}', uri: url);
-      }
+      await _get(client, url).timeout(pingTimeout);
     } finally {
+      // also closes a request that hangs past the limit
       client.close(force: true);
+    }
+  }
+
+  static Future<void> _get(HttpClient client, Uri url) async {
+    HttpClientResponse response = await (await client.getUrl(url)).close();
+    await response.drain<void>();
+    if (response.statusCode >= 400) {
+      throw HttpException('status ${response.statusCode}', uri: url);
     }
   }
 

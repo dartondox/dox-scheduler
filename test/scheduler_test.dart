@@ -523,6 +523,43 @@ void main() {
       expect(out['a'], TaskOutcome.skipped);
     });
 
+    test('skip() is checked at each repeat', () async {
+      FakeClock clock = FakeClock(tick);
+      List<int> seconds = <int>[];
+      Schedule s = Schedule();
+      s
+          .call('a', () => seconds.add(clock.now().second))
+          .everyFifteenSeconds()
+          .skip(() => clock.now().second == 30);
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      await scheduler.runRepeats(tick);
+      expect(seconds, <int>[0, 15, 45]);
+    });
+
+    test('repeats follow the minutes of a timezone()', () async {
+      // 02:00 UTC is 08:30 in Yangon
+      FakeClock clock = FakeClock(tick);
+      int inside = 0;
+      int outside = 0;
+      Schedule s = Schedule();
+      s
+          .call('in', () => inside++)
+          .everyTwentySeconds()
+          .between('08:30', '08:30')
+          .timezone('Asia/Yangon');
+      s
+          .call('out', () => outside++)
+          .everyTwentySeconds()
+          .between('02:00', '02:00')
+          .timezone('Asia/Yangon');
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      await scheduler.runRepeats(tick);
+      expect(inside, 3);
+      expect(outside, 0);
+    });
+
     test('withoutOverlapping skips repeats while a run runs', () async {
       Completer<void> gate = Completer<void>();
       FakeClock clock = FakeClock(tick);
@@ -620,7 +657,7 @@ void main() {
   group('exec |', () {
     test('exit code 0 runs, the name is the command line', () async {
       Schedule s = Schedule();
-      ScheduledTask task = s.exec('sh', <String>['-c', 'exit 0']);
+      ScheduledTask task = s.exec('sh', args: <String>['-c', 'exit 0']);
       expect(task.name, 'sh -c exit 0');
       expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.ran);
     });
@@ -629,7 +666,7 @@ void main() {
       Object? seen;
       Schedule s = Schedule();
       ScheduledTask task = s
-          .exec('sh', <String>['-c', 'exit 3'])
+          .exec('sh', args: <String>['-c', 'exit 3'])
           .onFailure((Object e, StackTrace st) => seen = e);
       expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.failed);
       expect(seen, isA<ProcessException>());
@@ -649,7 +686,10 @@ void main() {
       List<String> seen = <String>[];
       Schedule s = Schedule();
       ScheduledTask task = s
-          .exec('sh', <String>['-c', 'echo hi; echo oops >&2'])
+          .exec(
+            'sh',
+            args: <String>['-c', 'echo hi; sleep 0.05; echo oops >&2'],
+          )
           .sendOutputTo(path)
           .onOutput(seen.add)
           .onEveryServer();
@@ -669,7 +709,7 @@ void main() {
       String path = '${dir.path}/out.log';
       Schedule s = Schedule();
       ScheduledTask task = s
-          .exec('sh', <String>['-c', 'echo bad; exit 1'])
+          .exec('sh', args: <String>['-c', 'echo bad; exit 1'])
           .appendOutputTo(path);
       expect(await make(s).runTask(task, tick), TaskOutcome.failed);
       expect(await File(path).readAsString(), 'bad\n');
@@ -690,11 +730,74 @@ void main() {
       expect(File(path).existsSync(), isFalse);
     });
 
+    test('a custom name hides the args and allows the same line', () async {
+      addTearDown(() => Schedule.doxExecutable = 'dox');
+      Schedule.doxExecutable = 'echo';
+      Schedule s = Schedule();
+      s.command('sync', args: <String>['--token=secret']);
+      expect(
+        () => s.command('sync', args: <String>['--token=secret']),
+        throwsArgumentError,
+      );
+      ScheduledTask task = s.command(
+        'sync',
+        args: <String>['--token=secret'],
+        name: 'sync again',
+      );
+      expect(task.name, 'sync again');
+      expect(s.exec('true', name: 'plain').name, 'plain');
+      expect((await make(s).runDue(tick: tick))['sync again'], TaskOutcome.ran);
+    });
+
+    test('a throwing onOutput hook fails the task', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('echo', args: <String>['hi'])
+          .onOutput((String output) => throw StateError('no'));
+      expect(await make(s).runTask(task, tick), TaskOutcome.failed);
+    });
+
+    test('a file that can not be written fails the task, hooks still get '
+        'the output', () async {
+      List<String> seen = <String>[];
+      Object? error;
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('echo', args: <String>['hi'])
+          .sendOutputTo('/no/such/dir/out.log')
+          .onOutput(seen.add)
+          .onFailure((Object e, StackTrace st) => error = e);
+      expect(await make(s).runTask(task, tick), TaskOutcome.failed);
+      expect(seen, <String>['hi\n']);
+      expect(error, isA<FileSystemException>());
+    });
+
+    test('timeout kills the process', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('sh', args: <String>['-c', 'exec sleep 30'])
+          .withoutOverlapping()
+          .timeout(const Duration(milliseconds: 100))
+          .onEveryServer();
+      Scheduler scheduler = make(s);
+      Stopwatch watch = Stopwatch()..start();
+      expect(await scheduler.runTask(task, tick), TaskOutcome.failed);
+      // the process is gone, so its work ends and frees the overlap lock
+      await scheduler.idle();
+      while (await scheduler.runTask(task, tick) == TaskOutcome.skipped) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(watch.elapsed, lessThan(const Duration(seconds: 10)));
+    });
+
     test('command runs the dox executable', () async {
       addTearDown(() => Schedule.doxExecutable = 'dox');
       Schedule.doxExecutable = 'echo';
       Schedule s = Schedule();
-      ScheduledTask task = s.command('queue:prune', <String>['--hours=48']);
+      ScheduledTask task = s.command(
+        'queue:prune',
+        args: <String>['--hours=48'],
+      );
       expect(task.name, 'echo queue:prune --hours=48');
       expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.ran);
     });
@@ -713,6 +816,7 @@ void main() {
     });
     tearDown(() {
       ScheduledTask.sendPing = defaultPing;
+      ScheduledTask.pingTimeout = const Duration(seconds: 10);
     });
 
     test('order on success', () async {
@@ -796,6 +900,51 @@ void main() {
         throwsA(isA<HttpException>()),
       );
       expect(log, <String>['GET /ok', 'GET /bad']);
+    });
+
+    test(
+      'a ping that hangs fails at the limit and closes the socket',
+      () async {
+        ScheduledTask.pingTimeout = const Duration(milliseconds: 200);
+        ServerSocket server = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          0,
+        );
+        addTearDown(server.close);
+        Completer<void> closed = Completer<void>();
+        // accept, read the request, never answer
+        server.listen((Socket socket) {
+          socket.listen((List<int> _) {}, onDone: closed.complete);
+        });
+        await expectLater(
+          defaultPing(Uri.parse('http://127.0.0.1:${server.port}/hang')),
+          throwsA(isA<TimeoutException>()),
+        );
+        await closed.future.timeout(const Duration(seconds: 2));
+      },
+    );
+
+    test('a failed pingBefore is logged and the task runs', () async {
+      StringBuffer out = StringBuffer();
+      Schedule s = Schedule();
+      s.call('a', () => log.add('run')).pingBefore('http://x/down');
+      Scheduler scheduler = Scheduler(
+        tasks: s.tasks,
+        store: CacheStore(MemoryDriver()),
+        clock: FakeClock(tick),
+        out: out,
+        err: StringBuffer(),
+      );
+      expect((await scheduler.runDue(tick: tick))['a'], TaskOutcome.ran);
+      expect(log, <String>['ping /down', 'run']);
+      expect(out.toString(), contains('a: ping http://x/down failed'));
+    });
+
+    test('a bad url throws when the schedule is made', () {
+      ScheduledTask task = Schedule().call('a', () {});
+      expect(() => task.pingBefore('not a url'), throwsArgumentError);
+      expect(() => task.thenPing('ftp://x/y'), throwsArgumentError);
+      expect(() => task.pingOnFailure('http://'), throwsArgumentError);
     });
   });
 

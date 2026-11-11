@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'schedule_zone.dart';
 import 'scheduled_task.dart';
@@ -48,31 +50,40 @@ class Schedule {
 
   /// Add a task that runs [executable] with [args] as a process. No
   /// shell is used, so `|`, `>` and `*` are plain text. Use
-  /// `exec('sh', ['-c', '...'])` when you need a shell. The task name is
-  /// the command line, like `php artisan inspire`. A non-zero exit code
-  /// fails the task.
+  /// `exec('sh', args: ['-c', '...'])` when you need a shell. A non-zero
+  /// exit code fails the task. With `timeout()` the process is killed
+  /// when the time is up. A stop of `work` waits for the process.
+  ///
+  /// The task [name] is the command line by default, like
+  /// `php artisan inspire`. It shows in the logs, the lock keys and
+  /// `list`. Give your own [name] when [args] hold a secret (like
+  /// `--token=...`), or to add the same command line twice.
   ScheduledTask exec(
-    String executable, [
+    String executable, {
     List<String> args = const <String>[],
-  ]) {
+    String? name,
+  }) {
     List<String> argList = List<String>.of(args);
     late ScheduledTask task;
     task = call(
-      <String>[executable, ...argList].join(' '),
+      name ?? <String>[executable, ...argList].join(' '),
       () => _runProcess(task, executable, argList),
     );
     return task;
   }
 
   /// Add a task that runs a `dox` command of the app, like
-  /// `command('queue:prune', ['--hours=48'])`. It runs the process
+  /// `command('queue:prune', args: ['--hours=48'])`. It runs the process
   /// `dox queue:prune --hours=48` in the current folder (see
-  /// [doxExecutable]). The task name is that command line.
+  /// [doxExecutable]). It works like `exec()`: the default [name] is
+  /// that command line, so do not put a secret in [args] without a
+  /// [name].
   ScheduledTask command(
-    String command, [
+    String command, {
     List<String> args = const <String>[],
-  ]) {
-    return exec(doxExecutable, <String>[command, ...args]);
+    String? name,
+  }) {
+    return exec(doxExecutable, args: <String>[command, ...args], name: name);
   }
 
   /// The task named [name], or null.
@@ -84,30 +95,66 @@ class Schedule {
   }
 }
 
-/// run the process and hand its output to the output hooks of [task].
-/// A non-zero exit code throws.
+/// Run the process of [task]. Its output (stdout and stderr, as they
+/// come) goes to the output file as it comes. It is held in memory only
+/// when the task has `onOutput()` hooks. `timeout()` kills the process.
+/// A non-zero exit code, or a failed file write, throws after the hooks.
 Future<void> _runProcess(
   ScheduledTask task,
   String executable,
   List<String> args,
 ) async {
-  ProcessResult result = await Process.run(executable, args);
-  // ponytail: stdout then stderr, not mixed in time like `2>&1`
-  String output = '${result.stdout}${result.stderr}';
+  Process process = await Process.start(executable, args);
+  Duration? limit = task.timeoutAfter;
+  Timer? killer = limit == null ? null : Timer(limit, process.kill);
+  BytesBuilder? text = task.outputHooks.isEmpty ? null : BytesBuilder();
+  RandomAccessFile? file;
+  Object? fileError;
   String? path = task.outputPath;
   if (path != null) {
-    FileMode mode = task.appendOutput ? FileMode.append : FileMode.write;
-    await File(path).writeAsString(output, mode: mode);
+    try {
+      FileMode mode = task.appendOutput ? FileMode.append : FileMode.write;
+      file = await File(path).open(mode: mode);
+    } catch (error) {
+      fileError = error;
+    }
   }
-  for (TaskOutputHook hook in task.outputHooks) {
-    await hook(output);
+  // one chain, so the writes keep their order
+  Future<void> writes = Future<void>.value();
+  void onChunk(List<int> chunk) {
+    text?.add(chunk);
+    RandomAccessFile? out = file;
+    if (out == null) return;
+    writes = writes.then((_) async {
+      if (fileError != null) return;
+      try {
+        await out.writeFrom(chunk);
+      } catch (error) {
+        fileError = error;
+      }
+    });
   }
-  if (result.exitCode != 0) {
-    throw ProcessException(
-      executable,
-      args,
-      'Exit code ${result.exitCode}',
-      result.exitCode,
-    );
+
+  await Future.wait(<Future<void>>[
+    process.stdout.forEach(onChunk),
+    process.stderr.forEach(onChunk),
+  ]);
+  int code = await process.exitCode;
+  killer?.cancel();
+  await writes;
+  try {
+    await file?.close();
+  } catch (error) {
+    fileError ??= error;
   }
+  if (text != null) {
+    String output = systemEncoding.decode(text.takeBytes());
+    for (TaskOutputHook hook in task.outputHooks) {
+      await hook(output);
+    }
+  }
+  if (code != 0) {
+    throw ProcessException(executable, args, 'Exit code $code', code);
+  }
+  if (fileError case Object error) throw error;
 }
