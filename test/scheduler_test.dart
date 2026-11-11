@@ -617,6 +617,41 @@ void main() {
     });
   });
 
+  group('exec |', () {
+    test('exit code 0 runs, the name is the command line', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s.exec('sh', <String>['-c', 'exit 0']);
+      expect(task.name, 'sh -c exit 0');
+      expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.ran);
+    });
+
+    test('a non-zero exit code fails the task', () async {
+      Object? seen;
+      Schedule s = Schedule();
+      ScheduledTask task = s
+          .exec('sh', <String>['-c', 'exit 3'])
+          .onFailure((Object e, StackTrace st) => seen = e);
+      expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.failed);
+      expect(seen, isA<ProcessException>());
+      expect((seen as ProcessException).errorCode, 3);
+    });
+
+    test('a missing executable fails the task', () async {
+      Schedule s = Schedule();
+      ScheduledTask task = s.exec('dox-no-such-program');
+      expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.failed);
+    });
+
+    test('command runs the dox executable', () async {
+      addTearDown(() => Schedule.doxExecutable = 'dox');
+      Schedule.doxExecutable = 'echo';
+      Schedule s = Schedule();
+      ScheduledTask task = s.command('queue:prune', <String>['--hours=48']);
+      expect(task.name, 'echo queue:prune --hours=48');
+      expect((await make(s).runDue(tick: tick))[task.name], TaskOutcome.ran);
+    });
+  });
+
   test('Schedule rejects duplicate and empty names', () {
     Schedule s = Schedule();
     s.call('a', () {});
