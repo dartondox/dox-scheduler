@@ -27,6 +27,26 @@ void main() {
       expect(cron(task().everyThirtyMinutes()), '0,30 * * * *');
     });
 
+    test('seconds', () {
+      expect(task().repeatSeconds, isNull);
+      Map<int, ScheduledTask> tasks = <int, ScheduledTask>{
+        1: task().hourly().everySecond(),
+        2: task().everyTwoSeconds(),
+        5: task().everyFiveSeconds(),
+        10: task().everyTenSeconds(),
+        15: task().everyFifteenSeconds(),
+        20: task().everyTwentySeconds(),
+        30: task().everyThirtySeconds(),
+      };
+      tasks.forEach((int seconds, ScheduledTask t) {
+        expect(t.repeatSeconds, seconds);
+        expect(cron(t), '* * * * *');
+      });
+      expect(task().everyFiveSeconds().describeFilters(), 'every 5s');
+      // a frequency after it limits the due minutes
+      expect(cron(task().everyFiveSeconds().hourly()), '0 * * * *');
+    });
+
     test('hours and days', () {
       expect(cron(task().hourly()), '0 * * * *');
       expect(cron(task().hourlyAt(17)), '17 * * * *');

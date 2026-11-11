@@ -114,11 +114,22 @@ Usage: dart run bin/schedule.dart <command>
     return 0;
   }
 
+  /// Like Laravel: with a due sub-minute task, `run` repeats it until the
+  /// minute ends. Else it ends at once, like before.
   Future<int> _runOnce(Scheduler scheduler) async {
+    DateTime minute = Scheduler.minuteOf(clock.now());
     Map<String, TaskOutcome> outcomes = await scheduler.runDue(
+      tick: minute,
       waitForBackground: true,
     );
-    return outcomes.containsValue(TaskOutcome.failed) ? 1 : 0;
+    Map<String, TaskOutcome> repeats = await scheduler.runRepeats(
+      minute,
+      waitForBackground: true,
+    );
+    bool failed =
+        outcomes.containsValue(TaskOutcome.failed) ||
+        repeats.containsValue(TaskOutcome.failed);
+    return failed ? 1 : 0;
   }
 
   Future<int> _test(Scheduler scheduler) async {

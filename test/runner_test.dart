@@ -177,6 +177,21 @@ void main() {
     expect(out.toString(), contains('fail broken'));
   });
 
+  test('run: a sub-minute task repeats until the minute ends', () async {
+    int runs = 0;
+    FakeClock clock = FakeClock(tick);
+    int code = await SchedulerRunner(
+      schedule: (Schedule s) {
+        s.call('fast', () => runs++).everyFifteenSeconds();
+      },
+      clock: clock,
+      out: StringBuffer(),
+    ).run(<String>['run']);
+    expect(code, 0);
+    expect(runs, 4);
+    expect(clock.now(), tick.add(const Duration(seconds: 45)));
+  });
+
   test('test <name> runs one task now', () async {
     StringBuffer out = StringBuffer();
     int code = await runner(

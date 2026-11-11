@@ -437,6 +437,186 @@ void main() {
     });
   });
 
+  group('sub-minute |', () {
+    test('everyFiveSeconds runs 12 times in a minute', () async {
+      FakeClock clock = FakeClock(tick.add(const Duration(seconds: 30)));
+      List<DateTime> seen = <DateTime>[];
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('fast', () {
+        seen.add(clock.now());
+        if (seen.length == 12) scheduler.stop();
+      }).everyFiveSeconds();
+      scheduler = make(s, clock: clock);
+      await scheduler.work();
+      DateTime minute = tick.add(const Duration(minutes: 1));
+      expect(seen, <DateTime>[
+        for (int i = 0; i < 60; i += 5) minute.add(Duration(seconds: i)),
+      ]);
+      // one sleep to the minute, then one per step
+      expect(clock.sleeps, 12);
+    });
+
+    test('mixed steps run on their own seconds', () async {
+      List<String> log = <String>[];
+      FakeClock clock = FakeClock(tick);
+      Schedule s = Schedule();
+      s
+          .call('ten', () => log.add('10@${clock.now().second}'))
+          .everyTenSeconds();
+      s
+          .call('thirty', () => log.add('30@${clock.now().second}'))
+          .everyThirtySeconds();
+      s.call('minute', () => log.add('60@${clock.now().second}'));
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      await scheduler.runRepeats(tick);
+      expect(log, <String>[
+        '10@0', '30@0', '60@0', '10@10', '10@20', '10@30', '30@30', //
+        '10@40', '10@50',
+      ]);
+      // a step of 10 s: 5 sleeps
+      expect(clock.sleeps, 5);
+    });
+
+    test('no sub-minute task: one sleep per minute', () async {
+      FakeClock clock = FakeClock(tick.add(const Duration(seconds: 30)));
+      int runs = 0;
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('a', () {
+        if (++runs == 3) scheduler.stop();
+      });
+      scheduler = make(s, clock: clock);
+      await scheduler.work();
+      expect(clock.sleeps, 3);
+      expect(await make(s, clock: clock).runRepeats(tick), isEmpty);
+    });
+
+    test('a minute that is not due does not repeat', () async {
+      FakeClock clock = FakeClock(tick);
+      int runs = 0;
+      Schedule s = Schedule();
+      s.call('a', () => runs++).everySecond().between('03:00', '04:00');
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      await scheduler.runRepeats(tick);
+      expect(runs, 0);
+      expect(clock.sleeps, 0);
+    });
+
+    test('when() is checked at each repeat', () async {
+      FakeClock clock = FakeClock(tick);
+      int runs = 0;
+      bool open = true;
+      Schedule s = Schedule();
+      s
+          .call('a', () {
+            if (++runs == 2) open = false;
+          })
+          .everyTwentySeconds()
+          .when(() => open);
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      Map<String, TaskOutcome> out = await scheduler.runRepeats(tick);
+      expect(runs, 2);
+      expect(out['a'], TaskOutcome.skipped);
+    });
+
+    test('withoutOverlapping skips repeats while a run runs', () async {
+      Completer<void> gate = Completer<void>();
+      FakeClock clock = FakeClock(tick);
+      int runs = 0;
+      Schedule s = Schedule();
+      s
+          .call('a', () {
+            runs++;
+            return runs == 1 ? gate.future : null;
+          })
+          .everyTenSeconds()
+          .withoutOverlapping()
+          .runInBackground();
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      Map<String, TaskOutcome> out = await scheduler.runRepeats(
+        tick,
+        waitForBackground: true,
+      );
+      expect(out['a'], TaskOutcome.skipped);
+      expect(runs, 1);
+      gate.complete();
+      await scheduler.idle();
+      // the lock is free: the next minute runs again
+      DateTime next = tick.add(const Duration(minutes: 1));
+      clock.time = next;
+      await scheduler.runDue(tick: next);
+      await scheduler.runRepeats(next);
+      await scheduler.idle();
+      expect(runs, 7);
+    });
+
+    test('a slow run skips the missed steps', () async {
+      FakeClock clock = FakeClock(tick);
+      List<int> seconds = <int>[];
+      Schedule s = Schedule();
+      s.call('a', () {
+        seconds.add(clock.now().second);
+        // the first run takes 12 s
+        if (seconds.length == 1) {
+          clock.time = clock.time.add(const Duration(seconds: 12));
+        }
+      }).everyFiveSeconds();
+      Scheduler scheduler = make(s, clock: clock);
+      await scheduler.runDue(tick: tick);
+      await scheduler.runRepeats(tick);
+      expect(seconds, <int>[0, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+    });
+
+    test('each step runs once across two runners sharing a store', () async {
+      CacheStore store = CacheStore(MemoryDriver());
+      int runs = 0;
+      Future<void> runMinute() async {
+        Schedule s = Schedule();
+        s.call('a', () => runs++).everyFifteenSeconds();
+        Scheduler scheduler = make(s, store: store, clock: FakeClock(tick));
+        await scheduler.runDue(tick: tick);
+        await scheduler.runRepeats(tick);
+      }
+
+      await runMinute();
+      await runMinute();
+      expect(runs, 4);
+    });
+
+    test('stop in the middle of a minute ends work', () async {
+      FakeClock clock = FakeClock(tick);
+      int runs = 0;
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('a', () {
+        if (++runs == 3) scheduler.stop();
+      }).everySecond();
+      scheduler = make(s, clock: clock);
+      await scheduler.work().timeout(const Duration(seconds: 2));
+      expect(runs, 3);
+    });
+
+    test('stop while sleeping between steps ends work', () async {
+      Schedule s = Schedule();
+      s.call('a', () {}).everyThirtySeconds();
+      // the real clock: the sleep between steps is up to 30 s
+      Scheduler scheduler = Scheduler(
+        tasks: s.tasks,
+        store: CacheStore(MemoryDriver()),
+        err: StringBuffer(),
+      );
+      DateTime minute = Scheduler.minuteOf(DateTime.now().toUtc());
+      Future<Map<String, TaskOutcome>> loop = scheduler.runRepeats(minute);
+      scheduler.stop();
+      await loop.timeout(const Duration(seconds: 2));
+    });
+  });
+
   test('Schedule rejects duplicate and empty names', () {
     Schedule s = Schedule();
     s.call('a', () {});

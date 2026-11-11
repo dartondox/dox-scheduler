@@ -50,6 +50,10 @@ class ScheduledTask {
   /// Max run time of `timeout()`. Null: no limit.
   Duration? timeoutAfter;
 
+  /// Seconds between runs inside a due minute, set by `everySecond()` to
+  /// `everyThirtySeconds()`. Null: once a minute.
+  int? repeatSeconds;
+
   final List<TaskFilter> _when = <TaskFilter>[];
   final List<TaskFilter> _skip = <TaskFilter>[];
 
@@ -84,6 +88,38 @@ class ScheduledTask {
     this.expression = parsed;
     _lastDayOnly = false;
     return this;
+  }
+
+  /// Every second. Like the other `every...Seconds()` methods, it sets
+  /// the cron to every minute. Then the task repeats inside each due
+  /// minute. Other frequencies, filters and `timezone()` still decide if
+  /// a minute is due.
+  ScheduledTask everySecond() {
+    return _repeatEvery(1);
+  }
+
+  ScheduledTask everyTwoSeconds() {
+    return _repeatEvery(2);
+  }
+
+  ScheduledTask everyFiveSeconds() {
+    return _repeatEvery(5);
+  }
+
+  ScheduledTask everyTenSeconds() {
+    return _repeatEvery(10);
+  }
+
+  ScheduledTask everyFifteenSeconds() {
+    return _repeatEvery(15);
+  }
+
+  ScheduledTask everyTwentySeconds() {
+    return _repeatEvery(20);
+  }
+
+  ScheduledTask everyThirtySeconds() {
+    return _repeatEvery(30);
   }
 
   ScheduledTask everyMinute() {
@@ -513,6 +549,7 @@ class ScheduledTask {
   /// task has none. `when()` and `skip()` are code, so they are not in it.
   String describeFilters() {
     return <String>[
+      if (repeatSeconds case int seconds) 'every ${seconds}s',
       for (List<int> window in _between) 'between ${_windowText(window)}',
       for (List<int> window in _unlessBetween)
         'unless between ${_windowText(window)}',
@@ -557,6 +594,12 @@ class ScheduledTask {
     List<int> from = _time(start);
     List<int> to = _time(end);
     return <int>[from[0] * 60 + from[1], to[0] * 60 + to[1]];
+  }
+
+  /// like Laravel: every minute, and [seconds] between runs
+  ScheduledTask _repeatEvery(int seconds) {
+    repeatSeconds = seconds;
+    return everyMinute();
   }
 
   ScheduledTask _everyHours(String hours, int minute) {
