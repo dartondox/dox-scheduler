@@ -6,6 +6,7 @@ import 'package:dox_core/dox_core.dart' show Env;
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
 
+import 'clear_cache_cases.dart';
 import 'fake_clock.dart';
 
 /// 02:00 UTC
@@ -308,6 +309,21 @@ void main() {
         same(manager.store('memory')),
       );
     });
+  });
+
+  group('clear-cache memory |', () {
+    late CacheStore store;
+    setUp(() => store = CacheStore(MemoryDriver()));
+    clearCacheCases(() => store);
+  });
+
+  group('clear-cache file |', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('dox_schedule_clear');
+    });
+    tearDown(() => dir.delete(recursive: true));
+    clearCacheCases(() => CacheStore(FileDriver(directory: dir)));
   });
 
   group('lock warning |', () {

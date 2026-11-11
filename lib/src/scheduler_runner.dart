@@ -21,7 +21,8 @@ import 'scheduler_provider.dart';
 ///   ).run(args);
 /// }
 /// ```
-/// Commands: `work` (default), `run`, `list`, `test <name>`.
+/// Commands: `work` (default), `run`, `list`, `test <name>`,
+/// `clear-cache`.
 class SchedulerRunner {
   SchedulerRunner({
     required this.schedule,
@@ -55,7 +56,8 @@ Usage: dart run bin/schedule.dart <command>
   work         run due tasks at every minute, until Ctrl+C (default)
   run          run the tasks due this minute once, then exit (for cron)
   list         show each task, its schedule and next run time
-  test <name>  run one task now''';
+  test <name>  run one task now
+  clear-cache  remove the withoutOverlapping() locks left by a crash''';
 
   /// Run the command of [args]. Gives the exit code.
   Future<int> run(List<String> args) async {
@@ -79,6 +81,8 @@ Usage: dart run bin/schedule.dart <command>
         }
         _testTask = task;
         return _withApp(s, _test);
+      case 'clear-cache':
+        return _withApp(s, _clearCache);
     }
     out.writeln(usage);
     return ScheduleConstants.usageExitCode;
@@ -124,6 +128,26 @@ Usage: dart run bin/schedule.dart <command>
       force: true,
     );
     return outcome == TaskOutcome.failed ? 1 : 0;
+  }
+
+  /// Remove the `withoutOverlapping()` locks, like Laravel's
+  /// `schedule:clear-cache`. Do not run it while a task really runs in
+  /// another process: that task could then start twice.
+  Future<int> _clearCache(Scheduler scheduler) async {
+    List<String> cleared;
+    try {
+      cleared = await scheduler.clearOverlapLocks();
+    } on UnsupportedError catch (error) {
+      out.writeln('The lock store can not remove the locks: ${error.message}');
+      return 1;
+    }
+    if (cleared.isEmpty) {
+      out.writeln('No overlap locks found. Nothing to clear.');
+    }
+    for (String name in cleared) {
+      out.writeln('Removed the overlap lock of $name.');
+    }
+    return 0;
   }
 
   void _list(List<ScheduledTask> tasks) {
