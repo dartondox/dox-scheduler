@@ -746,7 +746,7 @@ class ScheduledTask {
     }
   }
 
-  /// like Laravel: every minute, and [seconds] between runs
+  /// every minute, and [seconds] between runs
   ScheduledTask _repeatEvery(int seconds) {
     repeatSeconds = seconds;
     return everyMinute();
@@ -773,7 +773,7 @@ class ScheduledTask {
 
   static List<int> _time(String time) {
     List<String> parts = time.split(':');
-    // an hour alone ('13') is 13:00, like Laravel
+    // an hour alone ('13') is 13:00
     if (parts.length == 1) parts.add('0');
     int? hour = parts.length == 2 ? int.tryParse(parts[0]) : null;
     int? minute = parts.length == 2 ? int.tryParse(parts[1]) : null;

@@ -114,7 +114,7 @@ Usage: dart run bin/schedule.dart <command>
     return 0;
   }
 
-  /// Like Laravel: with a due sub-minute task, `run` repeats it until the
+  /// With a due sub-minute task, `run` repeats it until the
   /// minute ends. Else it ends at once, like before.
   Future<int> _runOnce(Scheduler scheduler) async {
     DateTime minute = Scheduler.minuteOf(clock.now());
@@ -141,8 +141,8 @@ Usage: dart run bin/schedule.dart <command>
     return outcome == TaskOutcome.failed ? 1 : 0;
   }
 
-  /// Remove the `withoutOverlapping()` locks, like Laravel's
-  /// `schedule:clear-cache`. Do not run it while a task really runs in
+  /// Remove the `withoutOverlapping()` locks.
+  /// Do not run it while a task really runs in
   /// another process: that task could then start twice.
   Future<int> _clearCache(Scheduler scheduler) async {
     List<String> cleared;
