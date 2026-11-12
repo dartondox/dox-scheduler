@@ -75,10 +75,11 @@ class Scheduler {
 
   bool _stopping = false;
 
-  /// Ends the current [_wait] at [stop]. Each wait makes a new one. One
-  /// shared completer that never ends would keep one listener per wait
-  /// forever: a slow memory leak, about 0.4 MB a day.
-  Completer<void>? _wake;
+  /// End the running [_wait] calls at [stop]. Each wait adds its own
+  /// completer and removes it after. One shared completer that never ends
+  /// would keep one listener per wait forever: a slow memory leak, about
+  /// 0.4 MB a day.
+  final Set<Completer<void>> _wakes = <Completer<void>>{};
 
   /// Timers the clock made while [work] sleeps. They are cancelled after
   /// each sleep, so a stop does not leave a timer that keeps the process
@@ -271,10 +272,13 @@ class Scheduler {
   Future<void> _wait(Duration duration) async {
     if (_stopping) return;
     Completer<void> wake = Completer<void>();
-    _wake = wake;
-    await Future.any(<Future<void>>[_sleep(duration), wake.future]);
-    _wake = null;
-    _cancelSleepTimers();
+    _wakes.add(wake);
+    try {
+      await Future.any(<Future<void>>[_sleep(duration), wake.future]);
+    } finally {
+      _wakes.remove(wake);
+      _cancelSleepTimers();
+    }
   }
 
   /// Free the overlap locks that timed-out runs still hold. Call it when
@@ -316,8 +320,9 @@ class Scheduler {
   /// Stop [work]: no new task starts. Running tasks can finish.
   void stop() {
     _stopping = true;
-    Completer<void>? wake = _wake;
-    if (wake != null && !wake.isCompleted) wake.complete();
+    for (Completer<void> wake in _wakes) {
+      if (!wake.isCompleted) wake.complete();
+    }
   }
 
   /// Run `clock.sleep` in a zone that keeps its timers, so [work] can
