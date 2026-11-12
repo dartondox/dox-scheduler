@@ -7,8 +7,11 @@
 - New output hooks for `exec()` and `command()` tasks: `sendOutputTo(path)` replaces the file each run, `appendOutputTo(path)` adds to it, and `onOutput((String output) {...})` gets the text. The output is stdout and stderr, as it comes. The file gets it as it comes. `onOutput` holds the whole output in memory. The output is also written when the process fails. A file that can not be written fails the task, after the `onOutput` hooks got the output. A throwing `onOutput` hook fails the task. When more than one thing fails, the error is the first of: a non-zero exit code, an `onOutput` error, a file error. On a callback task these hooks do nothing.
 - New ping hooks: `pingBefore(url)`, `thenPing(url)` (after the task, also when it failed), `pingOnSuccess(url)` and `pingOnFailure(url)`, plus `pingBeforeIf`, `thenPingIf`, `pingOnSuccessIf` and `pingOnFailureIf` that take a bool first. Each sends a GET request with `HttpClient`. A ping fails after `ScheduledTask.pingTimeout` (10 seconds), and its connection is then closed. A status of 400 or more counts as a failed ping. A failed ping is logged and never fails the task. A url that is not http or https throws an `ArgumentError` when the schedule is made. Replace `ScheduledTask.sendPing` in tests.
 - New `clear-cache` command: `dart run bin/schedule.dart clear-cache` (or `dox schedule:clear-cache`). A crash left the `withoutOverlapping()` lock in the store, so the task was skipped for up to 24 hours. The command removes the overlap lock of each task in the schedule, by its exact key. Other cache keys stay. It prints one line per removed lock, or `No overlap locks found. Nothing to clear.` Do not run it while a task really runs on another process: that task could then start twice. `Scheduler.clearOverlapLocks()` does the same in code.
-- Fix: `schedule work` kept a little memory each minute, about 0.4 MB a day. Each sleep left a listener on a stop signal that only ended at shutdown. Now each sleep has its own signal, so nothing stays behind.
 - Fix: `schedule list` did not show `between()`, `unlessBetween()` and `environments()`. So a task looked like it ran all day in every environment. Now the schedule column shows them, like `0 * * * *, between 09:00-17:00, env production`. The new `ScheduledTask.describeFilters()` gives this text.
+
+## 3.1.1
+
+- Fix: `schedule work` kept a little memory each minute, about 0.4 MB a day. Each sleep left a listener on a stop signal that only ended at shutdown. Now each sleep has its own signal, so nothing stays behind.
 
 ## 3.1.0
 
