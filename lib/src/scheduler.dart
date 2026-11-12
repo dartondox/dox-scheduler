@@ -296,7 +296,7 @@ class Scheduler {
   Future<List<String>> clearOverlapLocks() async {
     List<String> cleared = <String>[];
     for (ScheduledTask task in tasks) {
-      // ponytail: every task, like Laravel; a task that dropped
+      // ponytail: every task; a task that dropped
       // withoutOverlapping() can still have an old lock
       if (await store.lock(_lockName('overlap', task)).forceRelease()) {
         cleared.add(task.name);
