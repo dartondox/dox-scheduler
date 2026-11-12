@@ -112,7 +112,7 @@ The task only puts the job on the queue. A queue worker runs it (see the `dox-qu
 
 ```dart
 s.exec('pg_dump', args: <String>['-f', 'backup.sql', 'mydb']).daily();
-s.command('queue:prune', args: <String>['--hours=48']).hourly();
+s.command('queue:prune-failed', args: <String>['--hours=48']).hourly();
 ```
 
 - `exec` uses no shell. `|`, `>` and `*` are plain text. Use `s.exec('sh', args: <String>['-c', '...'])` for a shell.
@@ -215,4 +215,4 @@ Only isolate 1 runs the tasks. With `inProcess` false, this provider does nothin
 - A ping url that is not `http` or `https` throws `ArgumentError` when the schedule is made.
 - `s.call` names must be unique. Pass `name:` to `exec` or `command` to add the same command line twice.
 - `work` on Ctrl+C or SIGTERM waits for running tasks. A second signal stops at once.
-- Do not run the schedule with `dox s` or `dart run` in production. Run the compiled binary.
+- Do not run the schedule with `dart run` in production. Run the compiled binary.
