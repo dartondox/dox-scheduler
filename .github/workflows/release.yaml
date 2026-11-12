@@ -1,8 +1,8 @@
 name: Release
 
 # Push a tag like v<version> to publish the package to pub.dev.
-# The tag must match the version in pubspec.yaml and be on main.
-# Wait for CI to be green on main before you push the tag.
+# The tag must match the version in pubspec.yaml and be on main or a release/* branch.
+# Wait for CI to be green on that branch before you push the tag.
 
 on:
   push:
