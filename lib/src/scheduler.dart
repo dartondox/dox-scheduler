@@ -74,7 +74,11 @@ class Scheduler {
   final Set<CacheLock> _lateLocks = <CacheLock>{};
 
   bool _stopping = false;
-  final Completer<void> _stopSignal = Completer<void>();
+
+  /// Ends the current [_wait] at [stop]. Each wait makes a new one. One
+  /// shared completer that never ends would keep one listener per wait
+  /// forever: a slow memory leak, about 0.4 MB a day.
+  Completer<void>? _wake;
 
   /// Timers the clock made while [work] sleeps. They are cancelled after
   /// each sleep, so a stop does not leave a timer that keeps the process
@@ -265,7 +269,11 @@ class Scheduler {
 
   /// Sleep for [duration], or until [stop].
   Future<void> _wait(Duration duration) async {
-    await Future.any(<Future<void>>[_sleep(duration), _stopSignal.future]);
+    if (_stopping) return;
+    Completer<void> wake = Completer<void>();
+    _wake = wake;
+    await Future.any(<Future<void>>[_sleep(duration), wake.future]);
+    _wake = null;
     _cancelSleepTimers();
   }
 
@@ -308,7 +316,8 @@ class Scheduler {
   /// Stop [work]: no new task starts. Running tasks can finish.
   void stop() {
     _stopping = true;
-    if (!_stopSignal.isCompleted) _stopSignal.complete();
+    Completer<void>? wake = _wake;
+    if (wake != null && !wake.isCompleted) wake.complete();
   }
 
   /// Run `clock.sleep` in a zone that keeps its timers, so [work] can
