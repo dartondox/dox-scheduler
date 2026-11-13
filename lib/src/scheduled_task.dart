@@ -27,9 +27,16 @@ class PingException implements Exception {
   final String url;
   final Object error;
 
+  /// the url has a secret token in its path, so only scheme, host and
+  /// port are shown, also in the error text
   @override
   String toString() {
-    return 'ping $url failed: $error';
+    Uri? uri = Uri.tryParse(url);
+    String shown = uri == null || uri.host.isEmpty
+        ? '(hidden)'
+        : '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+    String reason = error.toString().replaceAll(url, shown);
+    return 'ping $shown failed: $reason';
   }
 }
 
@@ -742,7 +749,7 @@ class ScheduledTask {
     HttpClientResponse response = await (await client.getUrl(url)).close();
     await response.drain<void>();
     if (response.statusCode >= 400) {
-      throw HttpException('status ${response.statusCode}', uri: url);
+      throw HttpException('status ${response.statusCode}');
     }
   }
 

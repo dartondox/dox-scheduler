@@ -947,7 +947,19 @@ void main() {
       );
       expect((await scheduler.runDue(tick: tick))['a'], TaskOutcome.ran);
       expect(log, contains('run'));
-      expect('ping http://x/down failed'.allMatches(out.toString()).length, 3);
+      expect('ping http://x failed'.allMatches(out.toString()).length, 3);
+      expect(out.toString(), isNot(contains('/down')));
+    });
+
+    test('the error text hides the secret path of the url', () {
+      String url = 'https://hc.example.com:8443/ping/secret-token?x=1';
+      String text = PingException(
+        url,
+        HttpException('status 500', uri: Uri.parse(url)),
+      ).toString();
+      expect(text, startsWith('ping https://hc.example.com:8443 failed'));
+      expect(text, isNot(contains('secret-token')));
+      expect(text, isNot(contains('x=1')));
     });
 
     test('the If forms', () async {
@@ -1020,7 +1032,7 @@ void main() {
       );
       expect((await scheduler.runDue(tick: tick))['a'], TaskOutcome.ran);
       expect(log, <String>['ping /down', 'run']);
-      expect(out.toString(), contains('a: ping http://x/down failed'));
+      expect(out.toString(), contains('a: ping http://x failed'));
     });
 
     test('a bad url throws when the schedule is made', () {

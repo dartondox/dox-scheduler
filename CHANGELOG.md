@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix: a failed ping (`pingBefore()` and the like) was logged with the full url. Monitor urls have a secret token in the path, so the token went to the logs. The log now shows only the scheme, host and port.
 - Ships an AI agent skill (dox-scheduler-guide). Install it in your app with `dart run skills@ get`.
 - Requires Dart 3.14 or newer.
 - New sub-minute frequencies: `everySecond()`, `everyTwoSeconds()`, `everyFiveSeconds()`, `everyTenSeconds()`, `everyFifteenSeconds()`, `everyTwentySeconds()` and `everyThirtySeconds()`. Like Laravel, the task repeats inside each due minute. The cron, days, `between()`, `when()`/`skip()` and `timezone()` still decide if the minute is due. `when()` and `skip()` are checked again before each repeat. `withoutOverlapping()` and `onOneServer()` work for each repeat. A slow run skips the steps it missed. `work` and `run` both repeat the task until the minute ends, so `run` from cron can take up to a minute. Without a sub-minute task, nothing changes: `work` still wakes once a minute and `run` ends at once. New `Scheduler.runRepeats(minute)` and `ScheduledTask.repeatSeconds`. `list` shows `every 5s`.
