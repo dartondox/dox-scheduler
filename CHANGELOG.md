@@ -1,5 +1,6 @@
 ## Unreleased
 
+- The scheduler process now runs `boot()` of every provider after their `setup()`, like the web server. So `QueueConfig(workInProcess: true)` still starts the in-process queue worker in the scheduler process. A `boot()` that throws shuts the started providers down, like a `setup()` that throws.
 - Fix: a failed ping (`pingBefore()` and the like) was logged with the full url. Monitor urls have a secret token in the path, so the token went to the logs. The log now shows only the scheme, host and port.
 - Ships an AI agent skill (dox-scheduler-guide). Install it in your app with `dart run skills@ get`.
 - Requires Dart 3.14 or newer.

@@ -57,6 +57,27 @@ class OtherProvider extends DoxProvider {
   }
 }
 
+/// logs its setup() and boot()
+class BootProvider extends DoxProvider {
+  BootProvider(this.name);
+
+  final String name;
+
+  @override
+  void setup() => FakeProvider.log.add('$name setup');
+
+  @override
+  Future<void> boot() async {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    FakeProvider.log.add('$name boot');
+  }
+}
+
+/// a second type: the runner starts one provider per type
+class BootProvider2 extends BootProvider {
+  BootProvider2() : super('b');
+}
+
 class BrokenProvider extends DoxProvider {
   @override
   void setup() {
@@ -263,6 +284,27 @@ void main() {
       expect(ran, contains('cleanup'));
     },
   );
+
+  test('with app: boot() runs after setup() of every provider', () async {
+    AppConfig app = AppConfig(
+      appKey: 'a' * 32,
+      providers: <DoxProvider>[BootProvider('a'), BootProvider2()],
+      cache: const CacheConfig(
+        defaultStore: 'memory',
+        stores: <String, Map<String, dynamic>>{
+          'memory': <String, dynamic>{'driver': 'memory'},
+        },
+      ),
+    );
+    StringBuffer out = StringBuffer();
+    expect(await runner(out, app: app).run(<String>['run']), 0);
+    expect(FakeProvider.log, <String>[
+      'a setup',
+      'b setup',
+      'a boot',
+      'b boot',
+    ]);
+  });
 
   test('with app: a setup error shuts down the started providers', () async {
     AppConfig app = AppConfig(

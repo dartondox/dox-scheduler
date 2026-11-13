@@ -248,6 +248,16 @@ Usage: dart run bin/schedule.dart <command>
       }
       providers.add(provider);
     }
+    // after every setup(), like the web server: eg. the in-process
+    // queue worker of dox_queue starts here
+    try {
+      for (DoxProvider provider in providers) {
+        await provider.boot();
+      }
+    } catch (_) {
+      await _undoStart(providers);
+      rethrow;
+    }
     return providers;
   }
 
