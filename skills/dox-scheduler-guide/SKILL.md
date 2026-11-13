@@ -9,7 +9,15 @@ description: Use when you add or change a scheduled task, set a cron or time fre
 You write all tasks in one file. A task runs once per tick, even when many isolates or servers run the schedule.
 For routes, controllers and the app layout, see the `dox-core-guide` skill.
 
-## Setup
+## Set up
+
+```bash
+dox add scheduler
+```
+
+It adds the package, writes the three files below and runs `build_runner`. It has no options. The steps below are the same by hand.
+
+## Install by hand
 
 ```bash
 dart pub add dox_scheduler
