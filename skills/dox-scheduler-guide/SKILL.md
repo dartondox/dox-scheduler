@@ -107,7 +107,7 @@ s.call('report', () => SendReport().dispatch()).hourly();
 ```
 
 The task only puts the job on the queue. A queue worker runs it (see the `dox-queue-guide` skill).
-The scheduler process (`bin/schedule.dart`) does not start a queue worker, also with `QueueConfig(workInProcess: true)`. Run `bin/queue.dart`, or `workInProcess` in the web server.
+The scheduler process (`bin/schedule.dart`) does not start a queue worker, also with `QueueConfig(inProcess: true)`. Run `bin/queue.dart`, or `inProcess` in the web server.
 
 ### 4. Run a process or a dox command
 
