@@ -27,10 +27,55 @@ class PingException implements Exception {
   final String url;
   final Object error;
 
+  /// the url has a secret token in its path, so only scheme, host and
+  /// port are shown. an `HttpException` shows its message only, as it
+  /// prints the uri. the error text has the url, and its path and
+  /// query (also upper case, or encoded), taken out.
   @override
   String toString() {
-    return 'ping $url failed: $error';
+    String shown = _hideUrl(url);
+    Object e = error;
+    String reason = _scrub(e is HttpException ? e.message : e.toString());
+    return 'ping $shown failed: $reason';
   }
+
+  String _scrub(String text) {
+    Uri? uri = Uri.tryParse(url);
+    if (uri == null) return '(hidden)';
+    String shown = _hideUrl(url);
+    String mark = '\u0001';
+    String replace(String text, String secret, String with_) => text.replaceAll(
+      RegExp(RegExp.escape(secret), caseSensitive: false),
+      with_,
+    );
+
+    /// whole urls, then the shown part, become a mark first, so the
+    /// path and query steps below can not cut into the shown part
+    List<String> whole = <String>[url, uri.toString(), Uri.decodeFull(url)]
+      ..sort((String a, String b) => b.length.compareTo(a.length));
+    for (String w in whole) {
+      text = replace(text, w, mark);
+    }
+    text = replace(text, shown, mark);
+    List<String> pieces = <String>[
+      if (uri.path.length > 1) uri.path,
+      if (uri.path.length > 1) Uri.decodeFull(uri.path),
+      if (uri.query.isNotEmpty) uri.query,
+      if (uri.query.isNotEmpty) Uri.decodeQueryComponent(uri.query),
+      if (uri.userInfo.isNotEmpty) uri.userInfo,
+    ]..sort((String a, String b) => b.length.compareTo(a.length));
+    for (String piece in pieces) {
+      text = replace(text, piece, '(hidden)');
+    }
+    return text.replaceAll(mark, shown);
+  }
+}
+
+/// scheme, host and port of [url], or `(hidden)` when it is not a url
+String _hideUrl(String url) {
+  Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.host.isEmpty || uri.scheme.isEmpty) return '(hidden)';
+  return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
 }
 
 /// One task of the schedule. Made by `Schedule.call()`.
@@ -716,7 +761,9 @@ class ScheduledTask {
     if (uri == null ||
         !uri.isScheme('http') && !uri.isScheme('https') ||
         uri.host.isEmpty) {
-      throw ArgumentError.value(url, 'url', 'Must be an http or https url');
+      throw ArgumentError(
+        'Invalid ping url (${_hideUrl(url)}): must be an http or https url',
+      );
     }
     return () async {
       try {
@@ -742,7 +789,7 @@ class ScheduledTask {
     HttpClientResponse response = await (await client.getUrl(url)).close();
     await response.drain<void>();
     if (response.statusCode >= 400) {
-      throw HttpException('status ${response.statusCode}', uri: url);
+      throw HttpException('status ${response.statusCode}');
     }
   }
 
