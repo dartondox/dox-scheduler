@@ -80,7 +80,7 @@ void main() {
       Scheduler a = Scheduler(tasks: s.tasks, store: one);
       Scheduler b = Scheduler(tasks: s.tasks, store: two);
       Future<TaskOutcome> first = a.runTask(task, tick);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await waitUntil(() => runs == 1);
       expect(await b.runTask(task, tick), TaskOutcome.skipped);
       expect(await first, TaskOutcome.ran);
       expect(await b.runTask(task, tick), TaskOutcome.ran);
