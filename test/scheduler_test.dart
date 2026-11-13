@@ -951,6 +951,81 @@ void main() {
       expect(out.toString(), isNot(contains('/down')));
     });
 
+    test('upper case and encoded urls do not leak', () {
+      List<String> urls = <String>[
+        'HTTPS://HC.Example.COM/Ping/SecretToken?Key=A%20B',
+        'https://hc.example.com/ping/secret%2Dtoken?k=a%26b',
+      ];
+      for (String url in urls) {
+        Uri uri = Uri.parse(url);
+        List<Object> errors = <Object>[
+          HttpException('status 500', uri: uri),
+          Exception('failed: $url'),
+          Exception('failed: ${uri.toString()} ${uri.path} ${uri.query}'),
+          Exception('failed: ${url.toUpperCase()}'),
+          Exception('failed: ${Uri.decodeFull(url)}'),
+        ];
+        for (Object e in errors) {
+          String text = PingException(url, e).toString().toLowerCase();
+          expect(text, startsWith('ping '));
+          expect(text, isNot(contains('secret')));
+          expect(text, isNot(contains('key=')));
+          expect(text, isNot(contains('k=')));
+          expect(text, isNot(contains('/ping/')));
+        }
+      }
+    });
+
+    test('a real dart:io failure does not leak the url', () async {
+      HttpServer server = await HttpServer.bind('127.0.0.1', 0);
+      server.listen((HttpRequest r) {
+        r.response.statusCode = 500;
+        r.response.close();
+      });
+      ScheduledTask.sendPing = defaultPing;
+      String url = 'HTTP://127.0.0.1:${server.port}/Secret%2FToken?K=A%20B';
+      try {
+        Schedule s = Schedule();
+        ScheduledTask task = s.call('a', () {}).pingBefore(url);
+        await expectLater(
+          task.beforeHooks.first(),
+          throwsA(
+            predicate<PingException>((PingException e) {
+              String text = e.toString().toLowerCase();
+              return !text.contains('secret') &&
+                  !text.contains('k=a') &&
+                  text.contains('http://127.0.0.1:${server.port}');
+            }),
+          ),
+        );
+      } finally {
+        await server.close(force: true);
+      }
+    });
+
+    test('an invalid url message has no path', () {
+      Schedule s = Schedule();
+      ScheduledTask task = s.call('a', () {});
+      expect(
+        () => task.pingBefore('ftp://host.example.com/secret-token'),
+        throwsA(
+          predicate<ArgumentError>(
+            (ArgumentError e) =>
+                !e.toString().contains('secret-token') &&
+                e.toString().contains('ftp://host.example.com'),
+          ),
+        ),
+      );
+      expect(
+        () => task.pingBefore('http:///secret-token'),
+        throwsA(
+          predicate<ArgumentError>(
+            (ArgumentError e) => !e.toString().contains('secret-token'),
+          ),
+        ),
+      );
+    });
+
     test('the error text hides the secret path of the url', () {
       String url = 'https://hc.example.com:8443/ping/secret-token?x=1';
       String text = PingException(

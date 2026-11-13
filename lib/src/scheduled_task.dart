@@ -28,16 +28,46 @@ class PingException implements Exception {
   final Object error;
 
   /// the url has a secret token in its path, so only scheme, host and
-  /// port are shown, also in the error text
+  /// port are shown. an `HttpException` shows its message only, as it
+  /// prints the uri. any other error text has the url, and its path and
+  /// query (also upper case, or encoded), taken out.
   @override
   String toString() {
-    Uri? uri = Uri.tryParse(url);
-    String shown = uri == null || uri.host.isEmpty
-        ? '(hidden)'
-        : '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
-    String reason = error.toString().replaceAll(url, shown);
+    String shown = _hideUrl(url);
+    Object e = error;
+    String reason = e is HttpException ? e.message : _scrub(e.toString());
     return 'ping $shown failed: $reason';
   }
+
+  String _scrub(String text) {
+    Uri? uri = Uri.tryParse(url);
+    if (uri == null) return '(hidden)';
+    String shown = _hideUrl(url);
+    List<String> secrets = <String>[
+      url,
+      uri.toString(),
+      Uri.decodeFull(url),
+      if (uri.path.length > 1) uri.path,
+      if (uri.path.length > 1) Uri.decodeFull(uri.path),
+      if (uri.query.isNotEmpty) uri.query,
+      if (uri.query.isNotEmpty) Uri.decodeQueryComponent(uri.query),
+      if (uri.userInfo.isNotEmpty) uri.userInfo,
+    ]..sort((String a, String b) => b.length.compareTo(a.length));
+    for (String secret in secrets) {
+      text = text.replaceAll(
+        RegExp(RegExp.escape(secret), caseSensitive: false),
+        secret == url || secret == uri.toString() ? shown : '(hidden)',
+      );
+    }
+    return text;
+  }
+}
+
+/// scheme, host and port of [url], or `(hidden)` when it is not a url
+String _hideUrl(String url) {
+  Uri? uri = Uri.tryParse(url);
+  if (uri == null || uri.host.isEmpty || uri.scheme.isEmpty) return '(hidden)';
+  return '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
 }
 
 /// One task of the schedule. Made by `Schedule.call()`.
@@ -723,7 +753,9 @@ class ScheduledTask {
     if (uri == null ||
         !uri.isScheme('http') && !uri.isScheme('https') ||
         uri.host.isEmpty) {
-      throw ArgumentError.value(url, 'url', 'Must be an http or https url');
+      throw ArgumentError(
+        'Invalid ping url (${_hideUrl(url)}): must be an http or https url',
+      );
     }
     return () async {
       try {
