@@ -29,13 +29,13 @@ class PingException implements Exception {
 
   /// the url has a secret token in its path, so only scheme, host and
   /// port are shown. an `HttpException` shows its message only, as it
-  /// prints the uri. any other error text has the url, and its path and
+  /// prints the uri. the error text has the url, and its path and
   /// query (also upper case, or encoded), taken out.
   @override
   String toString() {
     String shown = _hideUrl(url);
     Object e = error;
-    String reason = e is HttpException ? e.message : _scrub(e.toString());
+    String reason = _scrub(e is HttpException ? e.message : e.toString());
     return 'ping $shown failed: $reason';
   }
 
@@ -43,23 +43,31 @@ class PingException implements Exception {
     Uri? uri = Uri.tryParse(url);
     if (uri == null) return '(hidden)';
     String shown = _hideUrl(url);
-    List<String> secrets = <String>[
-      url,
-      uri.toString(),
-      Uri.decodeFull(url),
+    String mark = '\u0001';
+    String replace(String text, String secret, String with_) => text.replaceAll(
+      RegExp(RegExp.escape(secret), caseSensitive: false),
+      with_,
+    );
+
+    /// whole urls, then the shown part, become a mark first, so the
+    /// path and query steps below can not cut into the shown part
+    List<String> whole = <String>[url, uri.toString(), Uri.decodeFull(url)]
+      ..sort((String a, String b) => b.length.compareTo(a.length));
+    for (String w in whole) {
+      text = replace(text, w, mark);
+    }
+    text = replace(text, shown, mark);
+    List<String> pieces = <String>[
       if (uri.path.length > 1) uri.path,
       if (uri.path.length > 1) Uri.decodeFull(uri.path),
       if (uri.query.isNotEmpty) uri.query,
       if (uri.query.isNotEmpty) Uri.decodeQueryComponent(uri.query),
       if (uri.userInfo.isNotEmpty) uri.userInfo,
     ]..sort((String a, String b) => b.length.compareTo(a.length));
-    for (String secret in secrets) {
-      text = text.replaceAll(
-        RegExp(RegExp.escape(secret), caseSensitive: false),
-        secret == url || secret == uri.toString() ? shown : '(hidden)',
-      );
+    for (String piece in pieces) {
+      text = replace(text, piece, '(hidden)');
     }
-    return text;
+    return text.replaceAll(mark, shown);
   }
 }
 

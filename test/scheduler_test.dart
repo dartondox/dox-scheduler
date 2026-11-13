@@ -976,6 +976,28 @@ void main() {
       }
     });
 
+    test('the message of an HttpException is scrubbed too', () {
+      String url = 'https://hc.example.com/ping/secret-token';
+      String text = PingException(
+        url,
+        HttpException('bad answer from $url'),
+      ).toString();
+      expect(text, isNot(contains('secret-token')));
+      expect(text, startsWith('ping https://hc.example.com failed'));
+    });
+
+    test('a short url keeps its shown part whole', () {
+      /// the path /x is also in the host part of the text
+      String text = PingException(
+        'http://x/x',
+        Exception('failed http://x/x then http://x'),
+      ).toString();
+      expect(
+        text,
+        'ping http://x failed: Exception: failed http://x then http://x',
+      );
+    });
+
     test('a real dart:io failure does not leak the url', () async {
       HttpServer server = await HttpServer.bind('127.0.0.1', 0);
       server.listen((HttpRequest r) {
