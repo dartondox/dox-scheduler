@@ -1,5 +1,6 @@
 ## Unreleased
 
+- New `dox scheduler:install`, run by `dox add scheduler`. It writes `lib/config/schedule.dart`, `lib/providers/schedule_provider.dart` and `bin/schedule.dart`. It never overwrites a file. dox_scheduler now depends on `dox_annotation`.
 - Breaking: the scheduler process (`bin/schedule.dart`) no longer starts an in-process queue worker. 3.1 did, because it ran `setup()` of every provider, and dox_queue started the worker there. dox_queue now starts it in `DoxProvider.boot()`, and the scheduler does not run `boot()`. Run a worker with `inProcess` in the web server, or with `bin/queue.dart`.
 - Fix: a failed ping (`pingBefore()` and the like) was logged with the full url. Monitor urls have a secret token in the path, so the token went to the logs. The log now shows only the scheme, host and port.
 - Ships an AI agent skill (dox-scheduler-guide). Install it in your app with `dart run skills@ get`.
