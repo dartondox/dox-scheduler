@@ -1,4 +1,4 @@
-## Unreleased
+## 3.2.0
 
 - New `dox scheduler:install`, run by `dox add scheduler`. It writes `lib/config/schedule.dart`, `lib/providers/schedule_provider.dart` and `bin/schedule.dart`. It never overwrites a file. dox_scheduler now depends on `dox_annotation`.
 - Breaking: the scheduler process (`bin/schedule.dart`) no longer starts an in-process queue worker. 3.1 did, because it ran `setup()` of every provider, and dox_queue started the worker there. dox_queue now starts it in `DoxProvider.boot()`, and the scheduler does not run `boot()`. Run a worker with `inProcess` in the web server, or with `bin/queue.dart`.

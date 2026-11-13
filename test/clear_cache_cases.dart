@@ -5,6 +5,7 @@ import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:test/test.dart';
 
 import 'fake_clock.dart';
+import 'helpers.dart';
 
 final DateTime _tick = DateTime.utc(2026, 10, 25, 2);
 
@@ -36,8 +37,7 @@ void clearCacheCases(CacheStore Function() open) {
     s.call('b', () {}).withoutOverlapping().onEveryServer();
     // the crashed process: it took the lock and never freed it
     unawaited(make(s, open()).runTask(task, _tick));
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(runs, 1);
+    await waitUntil(() => runs == 1);
 
     CacheStore store = open();
     CacheLock appLock = store.lock('report', const Duration(minutes: 5));
