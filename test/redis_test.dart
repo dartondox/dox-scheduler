@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dox_cache/dox_cache.dart';
@@ -6,6 +7,7 @@ import 'package:test/test.dart';
 
 import 'clear_cache_cases.dart';
 import 'fake_clock.dart';
+import 'helpers.dart';
 
 /// Runs when REDIS_PORT is set (CI starts Redis). REDIS_HOST is optional.
 String? port = Platform.environment['REDIS_PORT'];
@@ -69,11 +71,16 @@ void main() {
 
     test('withoutOverlapping across two servers', () async {
       int runs = 0;
+      Completer<void> gate = Completer<void>();
+      addTearDown(() {
+        if (!gate.isCompleted) gate.complete();
+      });
       Schedule s = Schedule();
       ScheduledTask task = s
           .call('a', () async {
             runs++;
-            await Future<void>.delayed(const Duration(milliseconds: 100));
+            // the first run holds the lock until the test lets it go
+            if (runs == 1) await gate.future;
           })
           .withoutOverlapping()
           .onEveryServer();
@@ -82,6 +89,7 @@ void main() {
       Future<TaskOutcome> first = a.runTask(task, tick);
       await waitUntil(() => runs == 1);
       expect(await b.runTask(task, tick), TaskOutcome.skipped);
+      gate.complete();
       expect(await first, TaskOutcome.ran);
       expect(await b.runTask(task, tick), TaskOutcome.ran);
       expect(runs, 2);
