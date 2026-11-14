@@ -264,6 +264,25 @@ void main() {
     },
   );
 
+  test('run stops on a short APP_KEY in production', () async {
+    Env().env['APP_ENV'] = 'production';
+    addTearDown(() => Env().env.remove('APP_ENV'));
+    StringBuffer out = StringBuffer();
+    AppConfig app = AppConfig(appKey: 'short', totalIsolate: 1);
+    expect(await runner(out, app: app).run(<String>['run']), 1);
+    expect(out.toString(), contains('APP_KEY'));
+    expect(ran, isEmpty);
+  });
+
+  test('run only warns on a short APP_KEY in development', () async {
+    Env().env['APP_ENV'] = 'development';
+    addTearDown(() => Env().env.remove('APP_ENV'));
+    StringBuffer out = StringBuffer();
+    AppConfig app = AppConfig(appKey: 'short', totalIsolate: 1);
+    expect(await runner(out, app: app).run(<String>['run']), 0);
+    expect(ran, contains('cleanup'));
+  });
+
   test('with app: a setup error shuts down the started providers', () async {
     AppConfig app = AppConfig(
       appKey: 'a' * 32,

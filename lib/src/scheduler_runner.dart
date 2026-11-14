@@ -69,9 +69,9 @@ Usage: dart run bin/schedule.dart <command>
         _list(s.tasks);
         return 0;
       case 'work':
-        return _withApp(s, _work);
+        return _withApp(s, _work, checkKey: true);
       case 'run':
-        return _withApp(s, _runOnce);
+        return _withApp(s, _runOnce, checkKey: true);
       case 'test':
         if (args.length < 2) break;
         ScheduledTask? task = s.find(args[1]);
@@ -205,10 +205,21 @@ Usage: dart run bin/schedule.dart <command>
   /// start the app, run [command], stop the app
   Future<int> _withApp(
     Schedule s,
-    Future<int> Function(Scheduler scheduler) command,
-  ) async {
+    Future<int> Function(Scheduler scheduler) command, {
+    bool checkKey = false,
+  }) async {
     List<DoxProvider> providers = await _startApp();
     try {
+      // same check as the web server: a short or public key is easy to guess.
+      // Only the commands that run tasks check it.
+      if (checkKey && app != null) {
+        try {
+          Dox().checkAppKey();
+        } on StateError catch (error) {
+          out.writeln('[schedule] ${error.message}');
+          return 1;
+        }
+      }
       Scheduler scheduler = Scheduler(
         tasks: s.tasks,
         store: store ?? _defaultStore(),
