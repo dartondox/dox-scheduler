@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fix: the scheduler (`work` and `run`) now checks `APP_KEY` at start, like the web server does. A short or public sample key stops it with exit code 1 in production. In development, local and test it only logs a warning. `list`, `test` and `clear-cache` do not check it.
+
 ## 3.2.0
 
 - New `dox scheduler:install`, run by `dox add scheduler`. It writes `lib/config/schedule.dart`, `lib/providers/schedule_provider.dart` and `bin/schedule.dart`. It never overwrites a file. dox_scheduler now depends on `dox_annotation`.
