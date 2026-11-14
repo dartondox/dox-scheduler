@@ -1,4 +1,4 @@
-## Unreleased
+## 3.2.1
 
 - Fix: the scheduler (`work` and `run`) now checks `APP_KEY` at start, like the web server does. A short or public sample key stops it with exit code 1 in production. In development, local and test it only logs a warning. `list`, `test` and `clear-cache` do not check it.
 
