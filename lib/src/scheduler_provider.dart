@@ -57,10 +57,12 @@ class SchedulerProvider extends DoxProvider {
       store: store ?? Scheduler.lockStore(Dox().cache, config.store),
       clock: clock,
       out: out,
+      flags: config.flags,
     );
     scheduler = started;
     SchedulerLog.write(
       out,
+      config.flags,
       SchedulerLogLevel.info,
       '[schedule] running in the server, ${s.tasks.length} tasks',
       'running in the server, ${s.tasks.length} tasks',

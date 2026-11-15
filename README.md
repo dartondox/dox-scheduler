@@ -229,7 +229,7 @@ The locks use a [cache](https://dartondox.dev/digging-deeper/cache/) store.
 
 When the store has no locks (`null`), the scheduler uses a memory store.
 
-At start, the scheduler prints one warning (to stderr, or as a `[scheduler]` log line when the logger is on) when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
+At start, the scheduler prints one warning to stderr (or as a `[scheduler]` log line with `SchedulerFlags.loggerLines`) when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
 These stores are not shared between servers, so the lock works only inside one server.
 The sample app uses `file` by default, so you see this warning until you set a Redis store.
 It does not print when `APP_ENV` is `development` or `local`, because a dev machine is one server.
@@ -348,7 +348,15 @@ It stops them at the end.
 
 ### Logs
 
-When your app has the logger on (`LoggerConfig(enabled: true)`), the scheduler logs each task with the tag `[scheduler]`:
+By default, the scheduler prints its own lines, like `[schedule] 2026-10-25T02:00:00.000Z run cleanup`.
+
+Turn on `SchedulerFlags.loggerLines` to log them through the app logger, with the tag `[scheduler]`:
+
+```dart
+ScheduleConfig scheduleConfig = ScheduleConfig(
+  flags: const SchedulerFlags(loggerLines: true),
+);
+```
 
 ```
 [scheduler] running cleanup
@@ -357,8 +365,11 @@ When your app has the logger on (`LoggerConfig(enabled: true)`), the scheduler l
 [scheduler] skipped backup: the last run still runs
 ```
 
-The lines follow the logger `level` and `prettyPrint`, like other app logs.
-With the logger off, the scheduler prints its own lines, like `[schedule] 2026-10-25T02:00:00.000Z run cleanup`.
+The lines follow the logger `enabled`, `level` and `prettyPrint`, like other app logs.
+When the logger prints a line, the plain line is left out on stdout and stderr, so it does not show twice.
+Then the lock store warning goes to stdout, through the logger.
+A line the logger does not print (logger off, or below `level`) is still printed as a plain line.
+`SchedulerFlags.all()` turns on every flag.
 
 ### work
 

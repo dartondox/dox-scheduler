@@ -97,6 +97,7 @@ Usage: dart run bin/schedule.dart <command>
     void onSignal(ProcessSignal signal) {
       SchedulerLog.write(
         out,
+        config.flags,
         SchedulerLogLevel.info,
         '[schedule] $signal: stopping, running tasks can finish',
         '$signal: stopping, running tasks can finish',
@@ -114,6 +115,7 @@ Usage: dart run bin/schedule.dart <command>
     }
     SchedulerLog.write(
       out,
+      config.flags,
       SchedulerLogLevel.info,
       '[schedule] working, ${scheduler.tasks.length} tasks',
       'working, ${scheduler.tasks.length} tasks',
@@ -236,6 +238,7 @@ Usage: dart run bin/schedule.dart <command>
         store: store ?? _defaultStore(),
         clock: clock,
         out: out,
+        flags: config.flags,
       );
       try {
         return await command(scheduler);

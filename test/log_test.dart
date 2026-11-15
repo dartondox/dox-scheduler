@@ -5,6 +5,7 @@ import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/utils/log_buffer.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
+import 'package:dox_scheduler/src/scheduler_log.dart';
 import 'package:test/test.dart';
 
 import 'fake_clock.dart';
@@ -61,6 +62,7 @@ void main() {
       clock: FakeClock(tick),
       out: out,
       err: err,
+      flags: const SchedulerFlags(loggerLines: true),
     );
   });
 
@@ -127,6 +129,7 @@ void main() {
       clock: FakeClock(tick),
       out: out,
       err: err,
+      flags: const SchedulerFlags.all(),
     );
     withFile.warnIfLockNotShared();
     expect(err.toString(), startsWith('[schedule] warning: the lock store'));
@@ -134,18 +137,104 @@ void main() {
     expect(warn, startsWith('\x1B[2m[scheduler]\x1B[0m \x1B[33mthe lock'));
   });
 
-  test('stdout and stderr get each line once, from the Logger', () async {
-    ProcessResult result = await Process.run(
-      Platform.resolvedExecutable,
-      <String>['run', 'test/fixtures/run_logged.dart'],
+  test('the flag off: no Logger lines, out is the same', () async {
+    logger();
+    Schedule s = Schedule();
+    s.call('ok', () {});
+    Scheduler off = Scheduler(
+      tasks: s.tasks,
+      store: CacheStore(MemoryDriver()),
+      clock: FakeClock(tick),
+      out: out,
+      err: err,
     );
-    String stdoutText = result.stdout as String;
-    expect(result.exitCode, 0);
-    expect(stdoutText, contains(pretty('36', 'running a')));
-    expect('running a'.allMatches(stdoutText).length, 1);
-    expect(stdoutText, matches(RegExp(r'\[32mran a in \d+ms')));
-    // the plain lines are left out: the Logger printed them
-    expect(stdoutText, isNot(contains('[schedule]')));
-    expect(result.stderr as String, isNot(contains('[schedule]')));
+    await off.runTask(s.tasks.single, tick);
+    expect(flushed(), isEmpty);
+    expect(out.toString(), startsWith('[schedule] ${tick.toIso8601String()}'));
+  });
+
+  test('a Logger that throws keeps the plain line', () async {
+    logger();
+    void Function(String, String) saved = SchedulerLog.logger;
+    SchedulerLog.logger = (String level, String message) {
+      throw StateError('no log');
+    };
+    addTearDown(() => SchedulerLog.logger = saved);
+    SchedulerLog.write(
+      stdout,
+      const SchedulerFlags.all(),
+      SchedulerLogLevel.info,
+      '[schedule] plain',
+      'message',
+    );
+    SchedulerLog.write(
+      out,
+      const SchedulerFlags.all(),
+      SchedulerLogLevel.info,
+      '[schedule] plain',
+      'message',
+    );
+    expect(out.toString(), '[schedule] plain\n');
+  });
+
+  group('process |', () {
+    const String stamp = '2026-10-25T00:00:00.000Z';
+    const String warning =
+        '[schedule] warning: the lock store is a memory store. It is not '
+        'shared between servers, so onOneServer() works only inside one '
+        'server. When many servers run the schedule, each server runs the '
+        "task. Use a Redis cache store: ScheduleConfig(store: 'redis').\n";
+    RegExp oldOut = RegExp(
+      '^\\[schedule\\] $stamp run a\\n'
+      '\\[schedule\\] $stamp done a \\(\\d+ ms\\)\\n\$',
+    );
+
+    Future<ProcessResult> run(String mode) {
+      return Process.run(
+        Platform.resolvedExecutable,
+        <String>['run', 'test/fixtures/run_logged.dart', mode],
+        environment: <String, String>{'APP_ENV': 'production'},
+      );
+    }
+
+    test('flag off: the old output, exactly', () async {
+      ProcessResult result = await run('off');
+      expect(result.exitCode, 0);
+      expect(result.stdout as String, matches(oldOut));
+      expect(result.stderr, warning);
+    });
+
+    test('flag on with no Dox().config: the old output', () async {
+      ProcessResult result = await run('no-config');
+      expect(result.exitCode, 0);
+      expect(result.stdout as String, matches(oldOut));
+      expect(result.stderr, warning);
+    });
+
+    test('flag on: each line once, from the Logger', () async {
+      ProcessResult result = await run('on');
+      String text = result.stdout as String;
+      expect(result.exitCode, 0);
+      expect('running a'.allMatches(text).length, 1);
+      expect(text, contains(pretty('36', 'running a')));
+      expect(text, matches(RegExp(r'\[32mran a in \d+ms')));
+      expect(text, contains('\x1B[33mthe lock store is a memory store'));
+      expect(text, isNot(contains('[schedule]')));
+      expect(result.stderr, '');
+    });
+
+    test('flag on, level warn: plain start and done lines stay', () async {
+      ProcessResult result = await run('warn');
+      String text = result.stdout as String;
+      expect(result.exitCode, 0);
+      expect(text, contains('[schedule] $stamp run a\n'));
+      expect(
+        text,
+        matches(RegExp('\\[schedule\\] $stamp done a \\(\\d+ ms\\)')),
+      );
+      expect(text, isNot(contains('running a')));
+      expect(text, contains('\x1B[33mthe lock store is a memory store'));
+      expect(result.stderr, '');
+    });
   });
 }

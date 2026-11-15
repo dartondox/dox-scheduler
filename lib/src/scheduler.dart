@@ -6,6 +6,7 @@ import 'package:dox_core/dox_core.dart' show Env;
 
 import 'constants/schedule_constants.dart';
 import 'scheduled_task.dart';
+import 'scheduler_flags.dart';
 import 'scheduler_log.dart';
 
 /// Gives the time and waits. Inject a fake one in tests to move time.
@@ -50,6 +51,7 @@ class Scheduler {
     this.clock = const ScheduleClock(),
     StringSink? out,
     StringSink? err,
+    this.flags = const SchedulerFlags(),
   }) : out = out ?? StringBuffer(),
        err = err ?? stderr;
 
@@ -60,13 +62,15 @@ class Scheduler {
 
   final ScheduleClock clock;
 
-  /// Log lines go here. The app Logger also gets them, with the tag
-  /// `[scheduler]`. When this is stdout and the Logger prints the line,
-  /// the plain line is left out, so it does not show twice.
+  /// Log lines go here. See [SchedulerFlags.loggerLines] for the app
+  /// Logger.
   final StringSink out;
 
-  /// Warnings go here. Default: stderr. Like [out], the Logger also gets
-  /// them, and stderr is left out when the Logger prints the line.
+  /// Opt-in behaviors. `SchedulerRunner` and `SchedulerProvider` pass
+  /// `ScheduleConfig.flags`.
+  final SchedulerFlags flags;
+
+  /// Warnings go here. Default: stderr.
   final StringSink err;
 
   bool _lockChecked = false;
@@ -129,6 +133,7 @@ class Scheduler {
         "task. Use a Redis cache store: ScheduleConfig(store: 'redis').";
     SchedulerLog.write(
       err,
+      flags,
       SchedulerLogLevel.warn,
       '[schedule] warning: $text',
       text,
@@ -521,6 +526,7 @@ class Scheduler {
   void _log(SchedulerLogLevel level, String line, String message) {
     SchedulerLog.write(
       out,
+      flags,
       level,
       '[schedule] ${clock.now().toIso8601String()} $line',
       message,
