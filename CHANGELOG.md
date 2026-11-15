@@ -6,6 +6,8 @@
 - With the flag off, the output does not change.
 - New `Scheduler(flags: ...)`. `SchedulerRunner` and `SchedulerProvider` pass `ScheduleConfig.flags`.
 - Needs dox_core with the `tag` argument of `Logger`.
+- Fix: `work` lost a minute when the work of a tick ended in the next minute. It always waited for the minute after the clock time, so the minute it was already in never ran. A task that is not `runInBackground()` and runs from 01:59 to 02:00:30 made a `dailyAt('02:00')` task skip that day. A slow `everySecond()` run at second 59 lost every task of the next minute. Now the loop keeps the last minute it ran. When the work ends in a later minute, that minute runs at once, with no wait. When the work ends more than one minute later, only the minute of now runs: the minutes in between are not run later. This is the same rule as after a long pause, so a slow tick can not start a burst of old minutes. A minute never runs twice, also when the clock goes back.
+- Fix: with `ScheduleConfig(inProcess: true)`, the schedule also ran inside every `bin/queue.dart` process. A queue worker calls `setup()` of every provider in isolate 1, and `SchedulerProvider` only checked the isolate id. With a memory or file lock store, each task then ran once per process. Now `SchedulerProvider` starts the schedule only when `Dox().isWebServer` is true (the web server process). Tests that start the provider must set `Dox().isWebServer = true`.
 
 ## 3.2.1
 

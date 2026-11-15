@@ -16,7 +16,9 @@ import 'scheduler_log.dart';
 ///   ScheduleProvider() : super(schedule: schedule, config: scheduleConfig);
 /// }
 /// ```
-/// Only the first isolate runs the tasks. The once-per-tick lock keeps
+/// Only the first isolate of the web server runs the tasks. It does not
+/// run in `bin/queue.dart`, the scheduler command or tests that do not
+/// set `Dox().isWebServer`. The once-per-tick lock keeps
 /// many servers from running a task twice (with a Redis store).
 class SchedulerProvider extends DoxProvider {
   SchedulerProvider({
@@ -47,9 +49,10 @@ class SchedulerProvider extends DoxProvider {
 
   @override
   Future<void> setup() async {
-    if (!config.inProcess || Dox().isolateId != 1 || scheduler != null) {
-      return;
-    }
+    if (!config.inProcess || scheduler != null) return;
+    // only the web server process runs it: `bin/queue.dart` also calls
+    // setup() in isolate 1, and must not run the schedule a second time
+    if (!Dox().isWebServer || Dox().isolateId != 1) return;
     Schedule s = Schedule(timezone: config.timezone);
     schedule(s);
     Scheduler started = Scheduler(

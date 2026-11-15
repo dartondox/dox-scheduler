@@ -21,6 +21,10 @@ Scheduler make(Schedule s, {CacheStore? store, FakeClock? clock}) {
   );
 }
 
+Duration seconds(int n) {
+  return Duration(seconds: n);
+}
+
 void main() {
   group('runDue |', () {
     test('runs only due tasks, in order', () async {
@@ -424,6 +428,103 @@ void main() {
       gate.complete();
       await loop;
       expect(finished, isTrue);
+    });
+
+    test('a tick that runs into the next minute runs that minute', () async {
+      // 01:58:30; the first tick is 01:59
+      FakeClock clock = FakeClock(tick.subtract(const Duration(seconds: 90)));
+      List<DateTime> seen = <DateTime>[];
+      List<DateTime> daily = <DateTime>[];
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('slow', () {
+        seen.add(clock.now());
+        // the 01:59 run ends at 02:00:30
+        if (seen.length == 1) clock.time = clock.time.add(seconds(90));
+        if (seen.length == 3) scheduler.stop();
+      });
+      s.call('daily', () => daily.add(clock.now())).dailyAt('02:00');
+      scheduler = make(s, clock: clock);
+      await scheduler.work();
+      expect(daily, <DateTime>[tick.add(seconds(30))]);
+      expect(seen, <DateTime>[
+        tick.subtract(const Duration(minutes: 1)),
+        tick.add(seconds(30)),
+        tick.add(const Duration(minutes: 1)),
+      ]);
+    });
+
+    test(
+      'a run past more than one minute runs only the minute of now',
+      () async {
+        FakeClock clock = FakeClock(tick.subtract(const Duration(seconds: 90)));
+        List<DateTime> seen = <DateTime>[];
+        List<DateTime> daily = <DateTime>[];
+        late Scheduler scheduler;
+        Schedule s = Schedule();
+        s.call('slow', () {
+          seen.add(clock.now());
+          // the 01:59 run ends at 02:01:30: 02:00 is not run later
+          if (seen.length == 1) clock.time = clock.time.add(seconds(150));
+          if (seen.length == 3) scheduler.stop();
+        });
+        s.call('daily', () => daily.add(clock.now())).dailyAt('02:00');
+        scheduler = make(s, clock: clock);
+        await scheduler.work();
+        expect(daily, isEmpty);
+        expect(seen, <DateTime>[
+          tick.subtract(const Duration(minutes: 1)),
+          tick.add(seconds(90)),
+          tick.add(const Duration(minutes: 2)),
+        ]);
+      },
+    );
+
+    test('a slow last sub-minute run does not lose the next minute', () async {
+      FakeClock clock = FakeClock(tick.subtract(const Duration(seconds: 30)));
+      List<DateTime> minutes = <DateTime>[];
+      List<DateTime> fast = <DateTime>[];
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('fast', () {
+        DateTime now = clock.now();
+        fast.add(now);
+        // the run at 02:00:59 ends at 02:01:00.5
+        if (now == tick.add(seconds(59))) {
+          clock.time = now.add(const Duration(milliseconds: 1500));
+        }
+        if (now == tick.add(const Duration(minutes: 1, seconds: 2))) {
+          scheduler.stop();
+        }
+      }).everySecond();
+      s.call('minute', () => minutes.add(clock.now()));
+      scheduler = make(s, clock: clock);
+      await scheduler.work().timeout(const Duration(seconds: 5));
+      Duration late = const Duration(minutes: 1, milliseconds: 500);
+      expect(minutes, <DateTime>[tick, tick.add(late)]);
+      // 60 runs in 02:00, then 02:01:00.5, :01 and :02 keep the rhythm
+      expect(fast.length, 63);
+      expect(fast.sublist(60), <DateTime>[
+        tick.add(late),
+        tick.add(const Duration(minutes: 1, seconds: 1)),
+        tick.add(const Duration(minutes: 1, seconds: 2)),
+      ]);
+    });
+
+    test('a minute never runs twice when the clock goes back', () async {
+      FakeClock clock = FakeClock(tick.subtract(const Duration(seconds: 30)));
+      List<DateTime> seen = <DateTime>[];
+      late Scheduler scheduler;
+      Schedule s = Schedule();
+      s.call('a', () {
+        seen.add(clock.now());
+        // the clock goes back to 01:59:30 after the 02:00 tick
+        if (seen.length == 1) clock.time = tick.subtract(seconds(30));
+        if (seen.length == 2) scheduler.stop();
+      }).onEveryServer(); // no tick lock to hide a second run
+      scheduler = make(s, clock: clock);
+      await scheduler.work();
+      expect(seen, <DateTime>[tick, tick.add(const Duration(minutes: 1))]);
     });
 
     test('stop while sleeping ends the loop', () async {

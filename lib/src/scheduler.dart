@@ -265,16 +265,28 @@ class Scheduler {
   /// tick is the next full minute. Sub-minute tasks repeat inside the
   /// minute (see [runRepeats]). After [stop] it waits for the running
   /// tasks.
+  ///
+  /// When the work of a tick ends in a later minute, that minute runs at
+  /// once, with no wait. Only the minute of now runs: the minutes in
+  /// between are not run later. This is the same rule as after a long
+  /// pause (a sleeping laptop). A minute never runs twice.
   Future<void> work() async {
     warnIfLockNotShared();
+    DateTime? last;
     while (!_stopping) {
       DateTime now = clock.now();
-      DateTime next = minuteOf(now).add(const Duration(minutes: 1));
-      await _wait(next.difference(now));
-      if (_stopping) break;
-      // after a long pause (sleeping laptop) run the minute of now
-      DateTime late = minuteOf(clock.now());
-      DateTime tick = late.isAfter(next) ? late : next;
+      DateTime tick = minuteOf(now);
+      if (last == null || !tick.isAfter(last)) {
+        DateTime next = tick.add(const Duration(minutes: 1));
+        await _wait(next.difference(now));
+        if (_stopping) break;
+        // after a long pause (sleeping laptop) run the minute of now
+        DateTime late = minuteOf(clock.now());
+        tick = late.isAfter(next) ? late : next;
+        // the clock went back: wait until it passes the last tick
+        if (last != null && !tick.isAfter(last)) continue;
+      }
+      last = tick;
       await runDue(tick: tick);
       await runRepeats(tick);
     }

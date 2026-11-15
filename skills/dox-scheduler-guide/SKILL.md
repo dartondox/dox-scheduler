@@ -208,7 +208,7 @@ class ScheduleProvider extends SchedulerProvider {
 }
 ```
 
-Only isolate 1 runs the tasks. With `inProcess` false, this provider does nothing.
+Only isolate 1 of the web server runs the tasks, never `bin/queue.dart`. With `inProcess` false, this provider does nothing.
 
 ## Gotchas
 
