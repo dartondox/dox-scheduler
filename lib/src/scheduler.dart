@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_core/dox_core.dart' show Env;
 
+import 'bounded_sink.dart';
 import 'constants/schedule_constants.dart';
 import 'scheduled_task.dart';
 import 'scheduler_flags.dart';
@@ -52,7 +53,7 @@ class Scheduler {
     StringSink? out,
     StringSink? err,
     this.flags = const SchedulerFlags(),
-  }) : out = out ?? StringBuffer(),
+  }) : out = out ?? BoundedSink(),
        err = err ?? stderr;
 
   final List<ScheduledTask> tasks;
@@ -62,8 +63,9 @@ class Scheduler {
 
   final ScheduleClock clock;
 
-  /// Log lines go here. See [SchedulerFlags.loggerLines] for the app
-  /// Logger.
+  /// Log lines go here. The default keeps only the last 64 KB, so a
+  /// long run does not fill the memory. See [SchedulerFlags.loggerLines]
+  /// for the app Logger.
   final StringSink out;
 
   /// Opt-in behaviors. `SchedulerRunner` and `SchedulerProvider` pass
@@ -175,7 +177,7 @@ class Scheduler {
     int step = 60;
     for (ScheduledTask task in tasks) {
       int? seconds = task.repeatSeconds;
-      if (seconds != null && task.isDue(minute)) step = step.gcd(seconds);
+      if (seconds != null && _isDue(task, minute)) step = step.gcd(seconds);
     }
     if (step == 60) return outcomes;
     int offset = 0;
@@ -218,7 +220,7 @@ class Scheduler {
       if (_stopping) break;
       int? seconds = task.repeatSeconds;
       if (offset != 0 && (seconds == null || offset % seconds != 0)) continue;
-      if (!task.isDue(minute)) continue;
+      if (!_isDue(task, minute)) continue;
       Future<TaskOutcome> run = runTask(task, at);
       if (task.background) {
         background[task.name] = run;
@@ -232,6 +234,22 @@ class Scheduler {
       }
     }
     return outcomes;
+  }
+
+  DateTime? _dueMinute;
+  final Map<ScheduledTask, bool> _dueCache = <ScheduledTask, bool>{};
+
+  /// [ScheduledTask.isDue] once per task and minute. The sub-minute steps
+  /// of one minute ask again and again with the same answer.
+  ///
+  /// A task's schedule must not change while the scheduler runs. The
+  /// answer is kept for the minute.
+  bool _isDue(ScheduledTask task, DateTime minute) {
+    if (_dueMinute != minute) {
+      _dueMinute = minute;
+      _dueCache.clear();
+    }
+    return _dueCache[task] ??= task.isDue(minute);
   }
 
   /// Run [task] for the minute [tick]: filters, locks, hooks and the

@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Fix: a `Scheduler` made without `out` kept all its log lines in a `StringBuffer`, so memory grew for ever in a long run. Now the default keeps only the last 64 KB. `out.toString()` still works. Pass your own `out` to keep everything. `SchedulerRunner` and `SchedulerProvider` already pass stdout, so they did not change.
+- Faster: `isDue` is asked once per task and minute, not once per sub-minute step.
 - New: `SchedulerFlags.loggerLines`, off by default. Set it with `ScheduleConfig(flags: SchedulerFlags(loggerLines: true))`. `SchedulerFlags.all()` turns on every flag.
 - With the flag on, the scheduler logs its lines through the app `Logger`, with the tag `[scheduler]`: `running cleanup`, `ran cleanup in 12ms`, `failed cleanup in 3ms: ...`, `skipped cleanup: the last run still runs`, hook and lock errors, the lock store warning, and the start and stop lines.
 - With the flag on, the lines follow `LoggerConfig.enabled`, `level` and `prettyPrint`. When the Logger prints a line, the plain `[schedule]` line is left out on stdout and stderr. So the lock store warning goes to stdout through the Logger, not to stderr. Other sinks (like a `StringBuffer`) still get every plain line.
