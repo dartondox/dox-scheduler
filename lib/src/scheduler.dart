@@ -6,6 +6,7 @@ import 'package:dox_core/dox_core.dart' show Env;
 
 import 'constants/schedule_constants.dart';
 import 'scheduled_task.dart';
+import 'scheduler_log.dart';
 
 /// Gives the time and waits. Inject a fake one in tests to move time.
 class ScheduleClock {
@@ -59,10 +60,13 @@ class Scheduler {
 
   final ScheduleClock clock;
 
-  /// Log lines go here.
+  /// Log lines go here. The app Logger also gets them, with the tag
+  /// `[scheduler]`. When this is stdout and the Logger prints the line,
+  /// the plain line is left out, so it does not show twice.
   final StringSink out;
 
-  /// Warnings go here. Default: stderr.
+  /// Warnings go here. Default: stderr. Like [out], the Logger also gets
+  /// them, and stderr is left out when the Logger prints the line.
   final StringSink err;
 
   bool _lockChecked = false;
@@ -118,11 +122,16 @@ class Scheduler {
     }
     if (!oneServer) return;
     String kind = driver is FileDriver ? 'file' : 'memory';
-    err.writeln(
-      '[schedule] warning: the lock store is a $kind store. It is not '
-      'shared between servers, so onOneServer() works only inside one '
-      'server. When many servers run the schedule, each server runs the '
-      "task. Use a Redis cache store: ScheduleConfig(store: 'redis').",
+    String text =
+        'the lock store is a $kind store. It is not '
+        'shared between servers, so onOneServer() works only inside one '
+        'server. When many servers run the schedule, each server runs the '
+        "task. Use a Redis cache store: ScheduleConfig(store: 'redis').";
+    SchedulerLog.write(
+      err,
+      SchedulerLogLevel.warn,
+      '[schedule] warning: $text',
+      text,
     );
   }
 
@@ -372,19 +381,27 @@ class Scheduler {
       if (!force && overlapTtl != null) {
         CacheLock lock = store.lock(_lockName('overlap', task), overlapTtl);
         if (!await lock.get()) {
-          _log('skip ${task.name}: the last run still runs');
+          _log(
+            SchedulerLogLevel.info,
+            'skip ${task.name}: the last run still runs',
+            'skipped ${task.name}: the last run still runs',
+          );
           return TaskOutcome.skipped;
         }
         overlap = lock;
       }
     } catch (error, stack) {
       // a filter or the lock store threw
-      _log('fail ${task.name}: $error');
+      _log(
+        SchedulerLogLevel.danger,
+        'fail ${task.name}: $error',
+        'failed ${task.name}: $error',
+      );
       await _failed(task, error, stack);
       return TaskOutcome.failed;
     }
     Stopwatch watch = Stopwatch()..start();
-    _log('run ${task.name}');
+    _log(SchedulerLogLevel.info, 'run ${task.name}', 'running ${task.name}');
     bool workEnded = true;
     Future<void>? ended;
     try {
@@ -393,7 +410,11 @@ class Scheduler {
           await hook();
         } on PingException catch (error) {
           // a failed ping never fails the task
-          _log('${task.name}: $error');
+          _log(
+            SchedulerLogLevel.warn,
+            '${task.name}: $error',
+            '${task.name}: $error',
+          );
         }
       }
       Future<void> work = Future<void>.sync(task.callback);
@@ -405,11 +426,21 @@ class Scheduler {
       );
       Duration? limit = task.timeoutAfter;
       await (limit == null ? work : work.timeout(limit));
-      _log('done ${task.name} (${watch.elapsedMilliseconds} ms)');
+      int ms = watch.elapsedMilliseconds;
+      _log(
+        SchedulerLogLevel.success,
+        'done ${task.name} ($ms ms)',
+        'ran ${task.name} in ${ms}ms',
+      );
       await _hooks(task, task.successHooks);
       return TaskOutcome.ran;
     } catch (error, stack) {
-      _log('fail ${task.name} (${watch.elapsedMilliseconds} ms): $error');
+      int ms = watch.elapsedMilliseconds;
+      _log(
+        SchedulerLogLevel.danger,
+        'fail ${task.name} ($ms ms): $error',
+        'failed ${task.name} in ${ms}ms: $error',
+      );
       await _failed(task, error, stack);
       return TaskOutcome.failed;
     } finally {
@@ -446,7 +477,11 @@ class Scheduler {
       try {
         await hook();
       } catch (error) {
-        _log('hook of ${task.name} failed: $error');
+        _log(
+          SchedulerLogLevel.danger,
+          'hook of ${task.name} failed: $error',
+          'hook of ${task.name} failed: $error',
+        );
       }
     }
   }
@@ -456,7 +491,11 @@ class Scheduler {
       try {
         await hook(error, s);
       } catch (hookError) {
-        _log('onFailure hook of ${task.name} failed: $hookError');
+        _log(
+          SchedulerLogLevel.danger,
+          'onFailure hook of ${task.name} failed: $hookError',
+          'onFailure hook of ${task.name} failed: $hookError',
+        );
       }
     }
   }
@@ -466,7 +505,11 @@ class Scheduler {
     try {
       await lock.release();
     } catch (error) {
-      _log('lock ${lock.name} not released: $error');
+      _log(
+        SchedulerLogLevel.warn,
+        'lock ${lock.name} not released: $error',
+        'lock ${lock.name} not released: $error',
+      );
     }
   }
 
@@ -474,7 +517,13 @@ class Scheduler {
     return '${ScheduleConstants.lockPrefix}$kind:${task.name}';
   }
 
-  void _log(String line) {
-    out.writeln('[schedule] ${clock.now().toIso8601String()} $line');
+  /// Write [line] to [out] as before, and [message] to the Logger.
+  void _log(SchedulerLogLevel level, String line, String message) {
+    SchedulerLog.write(
+      out,
+      level,
+      '[schedule] ${clock.now().toIso8601String()} $line',
+      message,
+    );
   }
 }

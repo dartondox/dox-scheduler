@@ -6,6 +6,7 @@ import 'package:dox_core/dox_core.dart';
 import 'schedule.dart';
 import 'schedule_config.dart';
 import 'scheduler.dart';
+import 'scheduler_log.dart';
 
 /// Runs the schedule inside the running Dox app, when
 /// `ScheduleConfig(inProcess: true)`. Extend it in your app, so the
@@ -58,7 +59,12 @@ class SchedulerProvider extends DoxProvider {
       out: out,
     );
     scheduler = started;
-    out.writeln('[schedule] running in the server, ${s.tasks.length} tasks');
+    SchedulerLog.write(
+      out,
+      SchedulerLogLevel.info,
+      '[schedule] running in the server, ${s.tasks.length} tasks',
+      'running in the server, ${s.tasks.length} tasks',
+    );
     _loop = started.work();
   }
 

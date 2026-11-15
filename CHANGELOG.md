@@ -1,3 +1,7 @@
+## Unreleased
+
+- New: the scheduler logs its lines through the app `Logger`, with the tag `[scheduler]`. The lines are: task start (`running cleanup`), task done with its time (`ran cleanup in 12ms`), task failed (`failed cleanup in 3ms: ...`, danger), task skipped by `withoutOverlapping()` (`skipped cleanup: the last run still runs`), hook and lock errors, the lock store warning (warn), and `working, 3 tasks` / `running in the server, 3 tasks` at start. They follow `LoggerConfig.enabled`, `level` and `prettyPrint`. With the logger off, nothing changes. The `out` and `err` sinks of `Scheduler`, `SchedulerRunner` and `SchedulerProvider` still get the same plain `[schedule]` lines. Only when the sink is stdout or stderr itself (the default in `bin/schedule.dart` and in the server) and the Logger printed the line, the plain line is left out, so the terminal does not show it twice. Needs dox_core with the `tag` argument of `Logger`.
+
 ## 3.2.1
 
 - Fix: the scheduler (`work` and `run`) now checks `APP_KEY` at start, like the web server does. A short or public sample key stops it with exit code 1 in production. In development, local and test it only logs a warning. `list`, `test` and `clear-cache` do not check it.

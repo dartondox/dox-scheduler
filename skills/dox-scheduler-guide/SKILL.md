@@ -216,7 +216,7 @@ Only isolate 1 runs the tasks. With `inProcess` false, this provider does nothin
 - The once-per-tick lock uses a cache store. A `memory` store is one process. A `file` store is one machine.
   With many servers, set a Redis store: `ScheduleConfig(store: 'redis')`.
   There is no database store.
-- The scheduler prints a warning to stderr at start when a task uses `onOneServer()` and the store is `memory`, `file` or `null`.
+- The scheduler prints a warning at start (to stderr, or as a `[scheduler]` log line when the app logger is on) when a task uses `onOneServer()` and the store is `memory`, `file` or `null`.
   It is silent when `APP_ENV` is `development` or `local`.
 - The default zone is UTC. Set `timezone` when you mean local time. An unknown zone name throws `ArgumentError` at start.
 - With summer time: a skipped local time does not run that day. A repeated local time runs once.

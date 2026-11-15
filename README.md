@@ -229,7 +229,7 @@ The locks use a [cache](https://dartondox.dev/digging-deeper/cache/) store.
 
 When the store has no locks (`null`), the scheduler uses a memory store.
 
-At start, the scheduler prints one warning to stderr when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
+At start, the scheduler prints one warning (to stderr, or as a `[scheduler]` log line when the logger is on) when a task uses `onOneServer()` and the lock store is `memory` or `file` (or `null`).
 These stores are not shared between servers, so the lock works only inside one server.
 The sample app uses `file` by default, so you see this warning until you set a Redis store.
 It does not print when `APP_ENV` is `development` or `local`, because a dev machine is one server.
@@ -345,6 +345,20 @@ It stops them at the end.
 | `dart run bin/schedule.dart list` | shows each task, its schedule and its next run time |
 | `dart run bin/schedule.dart test cleanup` | runs one task now |
 | `dart run bin/schedule.dart clear-cache` | removes the `withoutOverlapping()` locks, after a crash |
+
+### Logs
+
+When your app has the logger on (`LoggerConfig(enabled: true)`), the scheduler logs each task with the tag `[scheduler]`:
+
+```
+[scheduler] running cleanup
+[scheduler] ran cleanup in 12ms
+[scheduler] failed report in 3ms: Bad state: no data
+[scheduler] skipped backup: the last run still runs
+```
+
+The lines follow the logger `level` and `prettyPrint`, like other app logs.
+With the logger off, the scheduler prints its own lines, like `[schedule] 2026-10-25T02:00:00.000Z run cleanup`.
 
 ### work
 
