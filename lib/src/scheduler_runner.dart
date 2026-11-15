@@ -9,6 +9,7 @@ import 'schedule.dart';
 import 'schedule_config.dart';
 import 'scheduled_task.dart';
 import 'scheduler.dart';
+import 'scheduler_log.dart';
 import 'scheduler_provider.dart';
 
 /// The command line of `bin/schedule.dart`:
@@ -94,7 +95,13 @@ Usage: dart run bin/schedule.dart <command>
     List<StreamSubscription<ProcessSignal>> signals =
         <StreamSubscription<ProcessSignal>>[];
     void onSignal(ProcessSignal signal) {
-      out.writeln('[schedule] $signal: stopping, running tasks can finish');
+      SchedulerLog.write(
+        out,
+        config.flags,
+        SchedulerLogLevel.info,
+        '[schedule] $signal: stopping, running tasks can finish',
+        '$signal: stopping, running tasks can finish',
+      );
       // the next signal does the default: it ends the process
       for (StreamSubscription<ProcessSignal> sub in signals) {
         sub.cancel();
@@ -106,7 +113,13 @@ Usage: dart run bin/schedule.dart <command>
     if (!Platform.isWindows) {
       signals.add(ProcessSignal.sigterm.watch().listen(onSignal));
     }
-    out.writeln('[schedule] working, ${scheduler.tasks.length} tasks');
+    SchedulerLog.write(
+      out,
+      config.flags,
+      SchedulerLogLevel.info,
+      '[schedule] working, ${scheduler.tasks.length} tasks',
+      'working, ${scheduler.tasks.length} tasks',
+    );
     await scheduler.work();
     for (StreamSubscription<ProcessSignal> sub in signals) {
       await sub.cancel();
@@ -225,6 +238,7 @@ Usage: dart run bin/schedule.dart <command>
         store: store ?? _defaultStore(),
         clock: clock,
         out: out,
+        flags: config.flags,
       );
       try {
         return await command(scheduler);

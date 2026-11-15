@@ -1,3 +1,12 @@
+## Unreleased
+
+- New: `SchedulerFlags.loggerLines`, off by default. Set it with `ScheduleConfig(flags: SchedulerFlags(loggerLines: true))`. `SchedulerFlags.all()` turns on every flag.
+- With the flag on, the scheduler logs its lines through the app `Logger`, with the tag `[scheduler]`: `running cleanup`, `ran cleanup in 12ms`, `failed cleanup in 3ms: ...`, `skipped cleanup: the last run still runs`, hook and lock errors, the lock store warning, and the start and stop lines.
+- With the flag on, the lines follow `LoggerConfig.enabled`, `level` and `prettyPrint`. When the Logger prints a line, the plain `[schedule]` line is left out on stdout and stderr. So the lock store warning goes to stdout through the Logger, not to stderr. Other sinks (like a `StringBuffer`) still get every plain line.
+- With the flag off, the output does not change.
+- New `Scheduler(flags: ...)`. `SchedulerRunner` and `SchedulerProvider` pass `ScheduleConfig.flags`.
+- Needs dox_core with the `tag` argument of `Logger`.
+
 ## 3.2.1
 
 - Fix: the scheduler (`work` and `run`) now checks `APP_KEY` at start, like the web server does. A short or public sample key stops it with exit code 1 in production. In development, local and test it only logs a warning. `list`, `test` and `clear-cache` do not check it.

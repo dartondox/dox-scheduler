@@ -1,10 +1,17 @@
+import 'scheduler_flags.dart';
+
 /// Settings of the scheduler. Keep one in `lib/config/schedule.dart`.
 ///
 /// ```
 /// ScheduleConfig scheduleConfig = ScheduleConfig(store: 'redis');
 /// ```
 class ScheduleConfig {
-  const ScheduleConfig({this.inProcess = false, this.store, this.timezone});
+  const ScheduleConfig({
+    this.inProcess = false,
+    this.store,
+    this.timezone,
+    this.flags = const SchedulerFlags(),
+  });
 
   /// Run the schedule inside the running Dox app (`SchedulerProvider`).
   /// Off by default: run `dart run bin/schedule.dart work` instead.
@@ -21,4 +28,7 @@ class ScheduleConfig {
   /// A task's own `timezone()` wins. An unknown name throws an
   /// [ArgumentError] when the schedule is made.
   final String? timezone;
+
+  /// Opt-in behaviors that change the defaults. All off by default.
+  final SchedulerFlags flags;
 }
