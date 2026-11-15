@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_scheduler/dox_scheduler.dart';
 import 'package:dox_scheduler/src/bounded_sink.dart';
@@ -54,6 +52,25 @@ void main() {
       expect(sink.toString(), 'ab-cd\n');
     });
 
+    test('writeAll also trims', () {
+      BoundedSink sink = BoundedSink(limit: 10);
+      sink.writeAll(List<String>.filled(100, 'abc'), ',');
+      expect(sink.toString().length, 10);
+      expect(sink.toString().endsWith('abc'), isTrue);
+    });
+
+    test('a cut in a surrogate pair drops the broken half', () {
+      // each emoji is 2 code units; limit 5 cuts one pair in half
+      BoundedSink sink = BoundedSink(limit: 5);
+      sink.write('\u{1F600}' * 20);
+      String text = sink.toString();
+      expect(text.length, 4);
+      expect(text, '\u{1F600}' * 2);
+      BoundedSink big = BoundedSink(limit: 5);
+      big.writeAll(List<String>.filled(20, '\u{1F600}'));
+      expect(big.toString(), '\u{1F600}' * 2);
+    });
+
     test('default out of Scheduler is bounded', () {
       Scheduler scheduler = Scheduler(
         tasks: <ScheduledTask>[],
@@ -63,27 +80,45 @@ void main() {
     });
   });
 
-  group('default ping |', () {
-    test('reuses one connection, and close frees it', () async {
-      HttpServer server = await HttpServer.bind(
-        InternetAddress.loopbackIPv4,
-        0,
+  group('isDue cache |', () {
+    DateTime minute = DateTime.utc(2026, 10, 25, 2);
+
+    Scheduler make(CountingTask task, FakeClock clock) {
+      return Scheduler(
+        tasks: <ScheduledTask>[task],
+        store: CacheStore(MemoryDriver()),
+        clock: clock,
+        err: StringBuffer(),
       );
-      server.listen((HttpRequest request) async {
-        request.response.statusCode = 200;
-        await request.response.close();
-      });
-      Uri url = Uri.parse('http://127.0.0.1:${server.port}/ok');
-      Future<void> Function(Uri) ping = ScheduledTask.sendPing;
-      try {
-        await ping(url);
-        await ping(url);
-        await ping(url);
-        expect(server.connectionsInfo().total, 1);
-      } finally {
-        ScheduledTask.closePingClient();
-        await server.close(force: true);
-      }
+    }
+
+    test('a new minute gives a fresh answer', () async {
+      CountingTask task = CountingTask()..everyFiveSeconds();
+      Scheduler scheduler = make(task, FakeClock(minute));
+      await scheduler.runDue(tick: minute);
+      await scheduler.runDue(tick: minute.add(const Duration(minutes: 1)));
+      expect(task.calls, 2);
+    });
+
+    test('a late minute uses that minute as the key', () async {
+      CountingTask task = CountingTask()..everyFiveSeconds();
+      Scheduler scheduler = make(task, FakeClock(minute));
+      await scheduler.runDue(tick: minute);
+      DateTime late = minute.add(const Duration(minutes: 3));
+      await scheduler.runDue(tick: late);
+      await scheduler.runRepeats(late);
+      expect(task.calls, 2);
+    });
+
+    test('a task added after the first check is still checked', () async {
+      CountingTask first = CountingTask()..everyFiveSeconds();
+      CountingTask second = CountingTask()..everyFiveSeconds();
+      Scheduler scheduler = make(first, FakeClock(minute));
+      await scheduler.runDue(tick: minute);
+      scheduler.tasks.add(second);
+      await scheduler.runRepeats(minute);
+      expect(first.calls, 1);
+      expect(second.calls, 1);
     });
   });
 }

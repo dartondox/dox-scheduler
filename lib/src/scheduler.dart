@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:dox_cache/dox_cache.dart';
 import 'package:dox_core/dox_core.dart' show Env;
 
-import 'constants/schedule_constants.dart';
 import 'bounded_sink.dart';
+import 'constants/schedule_constants.dart';
 import 'scheduled_task.dart';
 import 'scheduler_flags.dart';
 import 'scheduler_log.dart';
@@ -64,8 +64,8 @@ class Scheduler {
   final ScheduleClock clock;
 
   /// Log lines go here. The default keeps only the last 64 KB, so a
-  /// long run does not fill the memory. See [SchedulerFlags.loggerLines] for the app
-  /// Logger.
+  /// long run does not fill the memory. See [SchedulerFlags.loggerLines]
+  /// for the app Logger.
   final StringSink out;
 
   /// Opt-in behaviors. `SchedulerRunner` and `SchedulerProvider` pass
@@ -241,6 +241,9 @@ class Scheduler {
 
   /// [ScheduledTask.isDue] once per task and minute. The sub-minute steps
   /// of one minute ask again and again with the same answer.
+  ///
+  /// A task's schedule must not change while the scheduler runs. The
+  /// answer is kept for the minute.
   bool _isDue(ScheduledTask task, DateTime minute) {
     if (_dueMinute != minute) {
       _dueMinute = minute;
@@ -330,7 +333,6 @@ class Scheduler {
       _lateLocks.remove(lock);
       await _release(lock);
     }
-    ScheduledTask.closePingClient();
   }
 
   /// Remove the `withoutOverlapping()` lock of each task, whoever holds

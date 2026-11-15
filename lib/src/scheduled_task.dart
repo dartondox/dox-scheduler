@@ -775,28 +775,14 @@ class ScheduledTask {
     };
   }
 
-  /// One client for all pings, so the connections are reused.
-  static HttpClient? _pingClient;
-
   static Future<void> _httpGet(Uri url) async {
-    HttpClient client = _pingClient ??= HttpClient();
-    client.connectionTimeout = pingTimeout;
+    HttpClient client = HttpClient()..connectionTimeout = pingTimeout;
     try {
       await _get(client, url).timeout(pingTimeout);
-    } catch (_) {
-      // A failed or hung request can leave the connection bad. Close the
-      // client (also a request that hangs past the limit). The next ping
-      // makes a new one.
-      closePingClient();
-      rethrow;
+    } finally {
+      // also closes a request that hangs past the limit
+      client.close(force: true);
     }
-  }
-
-  /// Close the client the default `sendPing` keeps. `Scheduler.close()`
-  /// calls it. A later ping makes a new client.
-  static void closePingClient() {
-    _pingClient?.close(force: true);
-    _pingClient = null;
   }
 
   static Future<void> _get(HttpClient client, Uri url) async {
