@@ -457,7 +457,7 @@ Run `dart run build_runner build`. The generated container finds the provider.
 
 How it works:
 
-- Only the first isolate runs the tasks. The other isolates only serve requests.
+- Only the first isolate of the web server runs the tasks. The other isolates only serve requests. A queue worker (`bin/queue.dart`) does not run them.
 - With many servers, each server runs the loop. The once-per-tick lock makes each task run once. Use a Redis store for this.
 - When the server stops, it waits for the running tasks.
 

@@ -25,6 +25,7 @@ void main() {
   setUp(() {
     runs = 0;
     Dox().isolateId = 1;
+    Dox().isWebServer = true;
   });
 
   test('off by default', () async {
@@ -34,7 +35,7 @@ void main() {
     await s.shutdown();
   });
 
-  test('runs in isolate 1 and stops on shutdown', () async {
+  test('runs in isolate 1 of the web server and stops on shutdown', () async {
     SchedulerProvider s = provider(true, CacheStore(MemoryDriver()));
     await s.setup();
     expect(s.scheduler, isNotNull);
@@ -60,6 +61,18 @@ void main() {
     expect(s.scheduler!.tasks.single.zone.name, 'Asia/Yangon');
     await s.shutdown();
   });
+
+  test(
+    'not in the web server (bin/queue.dart, tests) it does not run',
+    () async {
+      // a queue worker process also calls setup() in isolate 1
+      Dox().isWebServer = false;
+      SchedulerProvider s = provider(true, CacheStore(MemoryDriver()));
+      await s.setup();
+      expect(s.scheduler, isNull);
+      expect(runs, 0);
+    },
+  );
 
   test('other isolates do not run it', () async {
     Dox().isolateId = 2;
