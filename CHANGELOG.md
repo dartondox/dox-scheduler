@@ -1,4 +1,4 @@
-## Unreleased
+## 3.2.2
 
 - Fix: a `Scheduler` made without `out` kept all its log lines in a `StringBuffer`, so memory grew for ever in a long run. Now the default keeps only the last 64 KB. `out.toString()` still works. Pass your own `out` to keep everything. `SchedulerRunner` and `SchedulerProvider` already pass stdout, so they did not change.
 - Faster: `isDue` is asked once per task and minute, not once per sub-minute step.
