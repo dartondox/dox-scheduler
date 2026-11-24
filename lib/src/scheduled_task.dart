@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:dox_core/dox_core.dart' show Env;
+import 'package:dox_http_client/dox_http_client.dart';
 
 import 'constants/schedule_constants.dart';
 import 'cron_expression.dart';
@@ -776,20 +777,18 @@ class ScheduledTask {
   }
 
   static Future<void> _httpGet(Uri url) async {
-    HttpClient client = HttpClient()..connectionTimeout = pingTimeout;
+    DoxHttpClient client = DoxHttpClient(timeout: pingTimeout);
     try {
-      await _get(client, url).timeout(pingTimeout);
+      DoxHttpClientResponse response = await client.get(url);
+      if (response.statusCode >= 400) {
+        throw HttpException('status ${response.statusCode}');
+      }
+    } on DoxHttpClientException catch (error) {
+      if (error.failure != DoxHttpFailure.timeout) rethrow;
+      // the same error as before the native client
+      throw TimeoutException('No answer to the ping', pingTimeout);
     } finally {
-      // also closes a request that hangs past the limit
-      client.close(force: true);
-    }
-  }
-
-  static Future<void> _get(HttpClient client, Uri url) async {
-    HttpClientResponse response = await (await client.getUrl(url)).close();
-    await response.drain<void>();
-    if (response.statusCode >= 400) {
-      throw HttpException('status ${response.statusCode}');
+      client.close();
     }
   }
 
