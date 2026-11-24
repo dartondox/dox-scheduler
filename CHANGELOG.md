@@ -1,4 +1,4 @@
-## Unreleased
+## 3.2.3
 
 - Faster: the pings (`pingBefore`, `thenPing` and the others) go through the native client of [dox_http_client](https://pub.dev/packages/dox_http_client). A custom `sendPing` is used as before.
 
