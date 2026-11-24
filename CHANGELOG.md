@@ -1,3 +1,7 @@
+## Unreleased
+
+- Faster: the pings (`pingBefore`, `thenPing` and the others) go through the native client of [dox_http_client](https://pub.dev/packages/dox_http_client). A custom `sendPing` is used as before.
+
 ## 3.2.2
 
 - Fix: a `Scheduler` made without `out` kept all its log lines in a `StringBuffer`, so memory grew for ever in a long run. Now the default keeps only the last 64 KB. `out.toString()` still works. Pass your own `out` to keep everything. `SchedulerRunner` and `SchedulerProvider` already pass stdout, so they did not change.
